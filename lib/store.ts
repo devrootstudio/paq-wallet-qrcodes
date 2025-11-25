@@ -20,6 +20,7 @@ interface WizardState {
   isLoading: boolean
   formData: FormData
   errorMessage: string | null
+  errorFromStep: Step | null
   setStep: (step: Step) => void
   setLoading: (loading: boolean) => void
   setErrorMessage: (message: string | null) => void
@@ -36,6 +37,7 @@ export const useWizardStore = create<WizardState>((set) => ({
   step: 1,
   isLoading: false,
   errorMessage: null,
+  errorFromStep: null,
   formData: {
     identification: "",
     fullName: "",
@@ -51,7 +53,7 @@ export const useWizardStore = create<WizardState>((set) => ({
   setStep: (step) => set({ step }),
   setLoading: (loading) => set({ isLoading: loading }),
   setErrorMessage: (message) => set({ errorMessage: message }),
-  setErrorStep: () => set({ step: 6 }),
+  setErrorStep: () => set((state) => ({ step: 6, errorFromStep: state.step })),
   nextStep: () => set((state) => ({ step: Math.min(state.step + 1, 6) as Step })),
   nextStepAsync: async () => {
     set({ isLoading: true })
@@ -73,6 +75,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       step: 1,
       isLoading: false,
       errorMessage: null,
+      errorFromStep: null,
       formData: {
         identification: "",
         fullName: "",

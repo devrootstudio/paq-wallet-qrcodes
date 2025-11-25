@@ -4,11 +4,20 @@ import { useWizardStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 
 export default function Step6Error() {
-  const { errorMessage, reset } = useWizardStore()
+  const { errorMessage, errorFromStep, setStep, setLoading, setErrorMessage, reset } = useWizardStore()
 
   const handleTryAgain = () => {
-    // Resetear todo y volver al inicio
-    reset()
+    // Clear error message
+    setErrorMessage(null)
+    
+    // Return to the step from which the error was triggered
+    if (errorFromStep) {
+      setLoading(false)
+      setStep(errorFromStep)
+    } else {
+      // If no errorFromStep, reset to beginning
+      reset()
+    }
   }
 
   return (

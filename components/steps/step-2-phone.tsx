@@ -6,9 +6,10 @@ import { useWizardStore } from "@/lib/store"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { ErrorTooltip } from "./step-1-form"
+import { submitStep2Form } from "@/app/actions"
 
 export default function Step2Phone() {
-  const { goToStepAsync } = useWizardStore() // using goToStepAsync instead of nextStepAsync
+  const { nextStepAsync, formData, setLoading, setErrorStep, setErrorMessage, isLoading } = useWizardStore()
   const [otp, setOtp] = useState("")
   const [otpError, setOtpError] = useState<string | null>(null)
   const [isTouched, setIsTouched] = useState(false)
@@ -32,8 +33,41 @@ export default function Step2Phone() {
     e.preventDefault()
     setIsTouched(true)
 
-    if (validateOtp(otp)) {
-      await goToStepAsync(4) // skip step 3 and go directly to step 4
+    // Validate OTP format first
+    if (!validateOtp(otp)) {
+      return
+    }
+
+    // Activate global loader
+    setLoading(true)
+
+    try {
+      // Prepare data for server action
+      const formDataToSubmit = {
+        phone: formData.phone.replace(/\s/g, ""),
+        token: otp,
+      }
+
+      // Call server action to validate token
+      const result = await submitStep2Form(formDataToSubmit)
+
+      if (result.success) {
+        // If successful, advance to next step
+        // nextStepAsync will handle the isLoading (keep it true during transition)
+        await nextStepAsync() // await goToStepAsync(4) // skip step 3 and go directly to step 4
+      } else {
+        // If error, save message and go to error step (fallback)
+        const errorMsg = result.error || "Error validating token"
+        setErrorMessage(errorMsg)
+        setLoading(false)
+        setErrorStep()
+      }
+    } catch (error) {
+      console.error("Error submitting token:", error)
+      const errorMsg = error instanceof Error ? error.message : "Unknown error validating token"
+      setErrorMessage(errorMsg)
+      setLoading(false)
+      setErrorStep()
     }
   }
 
@@ -62,8 +96,8 @@ export default function Step2Phone() {
         </div>
 
         <div className="flex justify-center">
-          <Button type="submit" variant="paqPrimary" className="px-10 w-full max-w-xs">
-            ENVIAR
+          <Button type="submit" variant="paqPrimary" className="px-10 w-full max-w-xs" disabled={isLoading}>
+            {isLoading ? "VALIDANDO..." : "ENVIAR"}
           </Button>
         </div>
       </form>

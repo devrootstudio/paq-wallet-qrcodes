@@ -30,6 +30,16 @@ export interface QueryClientResponse {
   client: ClientData | string | null
 }
 
+export interface SendTokenResponse {
+  returnCode: string | number
+  message: string
+}
+
+export interface ValidateTokenResponse {
+  returnCode: string | number
+  message: string
+}
+
 // Raw SOAP response interface (Spanish format from API)
 interface RawSoapResponse {
   codret: string | number
@@ -99,16 +109,45 @@ function escapeXml(unsafe: string): string {
   })
 }
 
-// Function to build SOAP XML envelope
+// Function to build SOAP XML envelope for Consulta_Cliente
 function buildSoapEnvelope(username: string, password: string, phone: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
     <Consulta_Cliente xmlns="http://www.paq.com.gt/">
-      <USERNAME>${username}</USERNAME>
-      <PASSWORD>${password}</PASSWORD>
+      <USERNAME>${escapeXml(username)}</USERNAME>
+      <PASSWORD>${escapeXml(password)}</PASSWORD>
       <CELULAR>${escapeXml(phone)}</CELULAR>
     </Consulta_Cliente>
+  </soap:Body>
+</soap:Envelope>`
+}
+
+// Function to build SOAP XML envelope for Envia_Token_TyC
+function buildTokenSoapEnvelope(username: string, password: string, phone: string): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <Envia_Token_TyC xmlns="http://www.paq.com.gt/">
+      <USERNAME>${escapeXml(username)}</USERNAME>
+      <PASSWORD>${escapeXml(password)}</PASSWORD>
+      <CELULAR>${escapeXml(phone)}</CELULAR>
+    </Envia_Token_TyC>
+  </soap:Body>
+</soap:Envelope>`
+}
+
+// Function to build SOAP XML envelope for Valida_Token_TyC
+function buildValidateTokenSoapEnvelope(username: string, password: string, phone: string, token: string): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <Valida_Token_TyC xmlns="http://www.paq.com.gt/">
+      <USERNAME>${escapeXml(username)}</USERNAME>
+      <PASSWORD>${escapeXml(password)}</PASSWORD>
+      <CELULAR>${escapeXml(phone)}</CELULAR>
+      <TOKEN>${escapeXml(token)}</TOKEN>
+    </Valida_Token_TyC>
   </soap:Body>
 </soap:Envelope>`
 }
@@ -293,6 +332,205 @@ export async function queryClient(phone: string): Promise<QueryClientResponse> {
     const responseData = extractResponseData(parsedXml)
 
     return responseData
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      throw new Error(`SOAP service connection error: ${error.message}`)
+    }
+    throw error
+  }
+}
+
+/**
+ * Sends OTP token to client's phone for terms and conditions acceptance
+ * @param phone - Client phone number (8 digits)
+ * @returns Response with return code and message
+ */
+export async function sendTokenTyc(phone: string): Promise<SendTokenResponse> {
+  // Validate credentials
+  if (!USERNAME || !PASSWORD) {
+    throw new Error("SOAP credentials not configured. Check SOAP_USERNAME and SOAP_PASSWORD_URL_ENCODE environment variables")
+  }
+
+  // Validate phone
+  const cleanPhone = phone.replace(/\s/g, "")
+  if (!cleanPhone || cleanPhone.length !== 8) {
+    throw new Error("Phone number must have 8 digits")
+  }
+
+  try {
+    // Build SOAP XML
+    const soapBody = buildTokenSoapEnvelope(USERNAME, PASSWORD, cleanPhone)
+
+    // Configure headers to ensure UTF-8
+    const headers = {
+      "Content-Type": "text/xml; charset=utf-8",
+      SOAPAction: "http://www.paq.com.gt/Envia_Token_TyC",
+      Accept: "text/xml; charset=utf-8",
+      "Accept-Charset": "utf-8, *;q=0.8",
+      "Accept-Language": "es, es-ES;q=0.9, *;q=0.8",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      Connection: "keep-alive",
+    }
+
+    // Make SOAP request with axios
+    const response = await axios.post(SOAP_URL, soapBody, {
+      headers,
+      responseType: "text",
+      responseEncoding: "utf8",
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      transformResponse: [
+        (data) => {
+          // If it comes as Buffer, convert to UTF-8 string
+          if (Buffer.isBuffer(data)) {
+            return data.toString("utf8")
+          }
+          return data
+        },
+      ],
+    })
+
+    // Parse XML response
+    const parsedXml = await parseXmlResponse(response.data)
+
+    // Extract response data
+    const envelope = parsedXml["soap:Envelope"] || parsedXml["soapenv:Envelope"] || parsedXml.Envelope
+    const body = envelope?.["soap:Body"] || envelope?.["soapenv:Body"] || envelope?.Body
+    const responseNode = body?.Envia_Token_TyCResponse || body?.["Envia_Token_TyCResponse"]
+    const resultRaw = responseNode?.Envia_Token_TyCResult || responseNode?.["Envia_Token_TyCResult"]
+
+    if (!resultRaw) {
+      throw new Error("Unrecognized response structure for token sending")
+    }
+
+    // Extract the value (can be JSON string or object)
+    const resultValue = extractValue(resultRaw)
+
+    // If it's a JSON string, parse it
+    if (typeof resultValue === "string") {
+      try {
+        const jsonParsed = JSON.parse(resultValue)
+        return {
+          returnCode: jsonParsed.codret || "0",
+          message: jsonParsed.mensaje || resultValue,
+        }
+      } catch (e) {
+        return {
+          returnCode: "0",
+          message: resultValue,
+        }
+      }
+    }
+
+    // If it's already an object, map it
+    return {
+      returnCode: resultValue.codret || "0",
+      message: resultValue.mensaje || "",
+    }
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      throw new Error(`SOAP service connection error: ${error.message}`)
+    }
+    throw error
+  }
+}
+
+/**
+ * Validates OTP token sent to client's phone for terms and conditions acceptance
+ * @param phone - Client phone number (8 digits)
+ * @param token - OTP token received by the client
+ * @returns Response with return code and message
+ */
+export async function validateTokenTyc(phone: string, token: string): Promise<ValidateTokenResponse> {
+  // Validate credentials
+  if (!USERNAME || !PASSWORD) {
+    throw new Error("SOAP credentials not configured. Check SOAP_USERNAME and SOAP_PASSWORD_URL_ENCODE environment variables")
+  }
+
+  // Validate phone
+  const cleanPhone = phone.replace(/\s/g, "")
+  if (!cleanPhone || cleanPhone.length !== 8) {
+    throw new Error("Phone number must have 8 digits")
+  }
+
+  // Validate token
+  const cleanToken = token.replace(/\s/g, "")
+  if (!cleanToken || cleanToken.length !== 6) {
+    throw new Error("Token must have 6 digits")
+  }
+
+  try {
+    // Build SOAP XML
+    const soapBody = buildValidateTokenSoapEnvelope(USERNAME, PASSWORD, cleanPhone, cleanToken)
+
+    // Configure headers to ensure UTF-8
+    const headers = {
+      "Content-Type": "text/xml; charset=utf-8",
+      SOAPAction: "http://www.paq.com.gt/Valida_Token_TyC",
+      Accept: "text/xml; charset=utf-8",
+      "Accept-Charset": "utf-8, *;q=0.8",
+      "Accept-Language": "es, es-ES;q=0.9, *;q=0.8",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      Connection: "keep-alive",
+    }
+
+    // Make SOAP request with axios
+    const response = await axios.post(SOAP_URL, soapBody, {
+      headers,
+      responseType: "text",
+      responseEncoding: "utf8",
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      transformResponse: [
+        (data) => {
+          // If it comes as Buffer, convert to UTF-8 string
+          if (Buffer.isBuffer(data)) {
+            return data.toString("utf8")
+          }
+          return data
+        },
+      ],
+    })
+
+    // Parse XML response
+    const parsedXml = await parseXmlResponse(response.data)
+
+    // Extract response data
+    const envelope = parsedXml["soap:Envelope"] || parsedXml["soapenv:Envelope"] || parsedXml.Envelope
+    const body = envelope?.["soap:Body"] || envelope?.["soapenv:Body"] || envelope?.Body
+    const responseNode = body?.Valida_Token_TyCResponse || body?.["Valida_Token_TyCResponse"]
+    const resultRaw = responseNode?.Valida_Token_TyCResult || responseNode?.["Valida_Token_TyCResult"]
+
+    if (!resultRaw) {
+      throw new Error("Unrecognized response structure for token validation")
+    }
+
+    // Extract the value (can be JSON string or object)
+    const resultValue = extractValue(resultRaw)
+
+    // If it's a JSON string, parse it
+    if (typeof resultValue === "string") {
+      try {
+        const jsonParsed = JSON.parse(resultValue)
+        return {
+          returnCode: jsonParsed.codret || "0",
+          message: jsonParsed.mensaje || resultValue,
+        }
+      } catch (e) {
+        return {
+          returnCode: "0",
+          message: resultValue,
+        }
+      }
+    }
+
+    // If it's already an object, map it
+    return {
+      returnCode: resultValue.codret || "0",
+      message: resultValue.mensaje || "",
+    }
   } catch (error) {
     if (axios.isAxiosError(error)) {
       throw new Error(`SOAP service connection error: ${error.message}`)
