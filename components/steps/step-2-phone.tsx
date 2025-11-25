@@ -34,7 +34,13 @@ export default function Step2Phone() {
 
   const validateOtp = (value: string) => {
     if (value.length !== 6) {
-      setOtpError("El código debe tener 6 dígitos")
+      setOtpError("El código debe tener 6 caracteres")
+      return false
+    }
+    // Validate alphanumeric (letters and numbers only)
+    const alphanumericRegex = /^[A-Za-z0-9]+$/
+    if (!alphanumericRegex.test(value)) {
+      setOtpError("El código solo puede contener letras y números")
       return false
     }
     setOtpError(null)
@@ -97,13 +103,14 @@ export default function Step2Phone() {
           </label>
           <div className="relative">
             <Input
-              placeholder="000000"
+              placeholder="ABC123"
               type="text"
               maxLength={6}
-              className={`h-14 text-lg tracking-widest text-center ${otpError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+              className={`h-14 text-lg tracking-widest text-center uppercase ${otpError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               value={otp}
               onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, "")
+                // Allow only alphanumeric characters (letters and numbers)
+                const val = e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase()
                 setOtp(val)
               }}
               autoFocus

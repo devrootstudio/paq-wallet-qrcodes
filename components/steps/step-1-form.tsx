@@ -21,7 +21,7 @@ export const ErrorTooltip = ({ message }: { message: string }) => {
 }
 
 export default function Step1Form() {
-  const { formData, updateFormData, isLoading, setLoading, setErrorStep, nextStepAsync } = useWizardStore()
+  const { formData, updateFormData, isLoading, setLoading, setErrorStep, nextStepAsync, goToStepAsync } = useWizardStore()
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [touched, setTouched] = useState<Record<string, boolean>>({})
 
@@ -169,6 +169,8 @@ export default function Step1Form() {
         nextStepAsync,
         setLoading,
         setErrorStep,
+        updateFormData,
+        goToStepAsync,
       },
     )
   }

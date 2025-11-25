@@ -18,7 +18,7 @@ interface FormData {
 
 type ErrorType = "token" | "cupo" | "general" | "phone_number" | null
 
-interface WizardState {
+export interface WizardState {
   step: Step
   isLoading: boolean
   formData: FormData

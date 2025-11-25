@@ -50,6 +50,7 @@ export async function handleStep0Submit(
           // Update store with all client data
           store.updateFormData({
             identification: clientData.identification || "",
+            phone: clientData.phone || cleanPhone,
             fullName: clientData.fullName || "",
             email: clientData.email || "",
             nit: clientData.nit || "",
@@ -76,10 +77,18 @@ export async function handleStep0Submit(
             const step1Result = await submitStep1Form(step1FormData)
 
             if (step1Result.success) {
-              // Step 1 process completed successfully (webhook sent, token sent, etc.)
-              // Now go to step 2
-              store.setLoading(false)
-              await store.goToStepAsync(2)
+              // Check if we should skip step 2 (OTP validation)
+              if (step1Result.skipStep2 && step1Result.approvedAmount !== undefined) {
+                // Client already accepted terms (Code 24), cupo validated, skip to step 3
+                console.log("⏭️ Skipping step 2 (OTP), going directly to step 3")
+                store.updateFormData({ approvedAmount: step1Result.approvedAmount })
+                store.setLoading(false)
+                await store.goToStepAsync(3)
+              } else {
+                // Normal flow: go to step 2 for OTP validation
+                store.setLoading(false)
+                await store.goToStepAsync(2)
+              }
             } else {
               // Error in step 1 process
               const errorType = step1Result.errorType || "general"
@@ -135,7 +144,7 @@ export async function handleStep1Submit(
     salary: string
     paymentFrequency: string
   },
-  store: Pick<WizardState, "nextStepAsync" | "setLoading" | "setErrorStep">,
+  store: Pick<WizardState, "nextStepAsync" | "setLoading" | "setErrorStep" | "updateFormData" | "goToStepAsync">,
 ) {
   // Activate global loader
   store.setLoading(true)
@@ -157,8 +166,17 @@ export async function handleStep1Submit(
     const result = await submitStep1Form(formDataToSubmit)
 
     if (result.success) {
-      // If successful, advance to next step
-      await store.nextStepAsync()
+      // Check if we should skip step 2 (OTP validation)
+      if (result.skipStep2 && result.approvedAmount !== undefined) {
+        // Client already accepted terms (Code 24), cupo validated, skip to step 3
+        console.log("⏭️ Skipping step 2 (OTP), going directly to step 3")
+        store.updateFormData({ approvedAmount: result.approvedAmount })
+        store.setLoading(false)
+        await store.goToStepAsync(3)
+      } else {
+        // Normal flow: advance to next step (step 2)
+        await store.nextStepAsync()
+      }
     } else {
       // Use setErrorStep to analyze and decide where to go
       const errorType = result.errorType || "general"
