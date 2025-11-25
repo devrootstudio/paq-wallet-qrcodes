@@ -314,7 +314,7 @@ export default function Step1Form() {
           <label className="text-white text-sm font-medium ml-1">Número de identificación</label>
           <div className="relative">
             <Input
-              placeholder="2131 46703 0101"
+              placeholder="2131 41001 0101"
               value={formatDPI(formData.identification)}
               onChange={handleDPIChange}
               onBlur={(e) => handleBlur("identification", formData.identification)}
@@ -343,7 +343,7 @@ export default function Step1Form() {
           <label className="text-white text-sm font-medium ml-1">Teléfono celular registrado en PAQ Wallet</label>
           <div className="relative">
             <Input
-              placeholder="1234 5678"
+              placeholder="5000 2184"
               type="tel"
               value={formatPhone(formData.phone)}
               onChange={handlePhoneChange}
