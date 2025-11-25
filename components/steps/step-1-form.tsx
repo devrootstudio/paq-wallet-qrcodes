@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { ChevronDown } from "lucide-react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { submitStep1Form } from "@/app/actions"
+import { handleStep1Submit } from "@/lib/step-handlers"
 
 // Helper component for tooltips
 export const ErrorTooltip = ({ message }: { message: string }) => {
@@ -21,7 +21,7 @@ export const ErrorTooltip = ({ message }: { message: string }) => {
 }
 
 export default function Step1Form() {
-  const { nextStepAsync, formData, updateFormData, isLoading, setLoading, setErrorStep } = useWizardStore()
+  const { formData, updateFormData, isLoading, setLoading, setErrorStep, nextStepAsync } = useWizardStore()
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [touched, setTouched] = useState<Record<string, boolean>>({})
 
@@ -153,42 +153,24 @@ export default function Step1Form() {
       return
     }
 
-    // Activar el loader global
-    setLoading(true)
-
-    try {
-      // Preparar datos para enviar al servidor
-      const formDataToSubmit = {
-        identification: formData.identification.replace(/\s/g, ""),
-        fullName: formData.fullName.trim(),
-        phone: formData.phone.replace(/\s/g, ""),
-        email: formData.email.trim(),
-        nit: formData.nit.trim(),
+    // Use centralized handler
+    await handleStep1Submit(
+      {
+        identification: formData.identification,
+        fullName: formData.fullName,
+        phone: formData.phone,
+        email: formData.email,
+        nit: formData.nit,
         startDate: formData.startDate,
         salary: formData.salary,
         paymentFrequency: formData.paymentFrequency,
-      }
-
-      // Llamar a la server action
-      const result = await submitStep1Form(formDataToSubmit)
-
-      if (result.success) {
-        // Si es exitoso, avanzar al siguiente step
-        // nextStepAsync manejará el isLoading (lo mantendrá en true durante la transición)
-        await nextStepAsync()
-      } else {
-        // Si hay error, usar setErrorStep para analizar y decidir a dónde ir
-        const errorMsg = result.error || "Error al procesar el formulario"
-        const errorType = result.errorType || "general"
-        setLoading(false)
-        setErrorStep(errorType, errorMsg)
-      }
-    } catch (error) {
-      console.error("Error submitting form:", error)
-      const errorMsg = error instanceof Error ? error.message : "Error desconocido al enviar el formulario"
-      setLoading(false)
-      setErrorStep("general", errorMsg)
-    }
+      },
+      {
+        nextStepAsync,
+        setLoading,
+        setErrorStep,
+      },
+    )
   }
 
   const handleChange = (name: string, value: string) => {

@@ -2,6 +2,7 @@
 
 import { useWizardStore } from "@/lib/store"
 import { Spinner } from "@/components/ui/spinner"
+import Step0Phone from "@/components/steps/step-0-phone"
 import Step1Form from "@/components/steps/step-1-form"
 import Step2Phone from "@/components/steps/step-2-phone"
 import Step3Approval from "@/components/steps/step-3-approval"
@@ -13,6 +14,8 @@ export default function Home() {
 
   const renderStep = () => {
     switch (step) {
+      case 0:
+        return <Step0Phone />
       case 1:
         return <Step1Form />
       case 2:
@@ -24,7 +27,7 @@ export default function Home() {
       case 5:
         return <Step5Error />
       default:
-        return <Step1Form />
+        return <Step0Phone />
     }
   }
 

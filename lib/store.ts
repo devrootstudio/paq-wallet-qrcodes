@@ -1,6 +1,6 @@
 import { create } from "zustand"
 
-type Step = 1 | 2 | 3 | 4 | 5
+type Step = 0 | 1 | 2 | 3 | 4 | 5
 
 interface FormData {
   identification: string
@@ -16,7 +16,7 @@ interface FormData {
   approvedAmount: number
 }
 
-type ErrorType = "token" | "cupo" | "general" | null
+type ErrorType = "token" | "cupo" | "general" | "phone_number" | null
 
 interface WizardState {
   step: Step
@@ -36,7 +36,7 @@ interface WizardState {
 }
 
 export const useWizardStore = create<WizardState>((set) => ({
-  step: 1,
+  step: 0,
   isLoading: false,
   errorMessage: null,
   errorFromStep: null,
@@ -64,7 +64,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       if (errorType === "cupo") {
         return {
           step: 5, // Fallback step
-          errorFromStep: 1, // force to step1
+          errorFromStep: 0, // force to step0
           errorMessage: errorMessage || "Error validating credit limit",
           formData: {
             identification: "",
@@ -91,14 +91,23 @@ export const useWizardStore = create<WizardState>((set) => ({
         }
       }
 
-      // If error is from step1, go back to step1
-      if (errorType === "general") {
-        return {
-          step: 5, // Fallback step
-          errorFromStep: 1, // force to step1
-          errorMessage: errorMessage || "Error processing form",
+        // If error is from step1, go back to step1
+        if (errorType === "phone_number") {
+          return {
+            step: 5, // Fallback step
+            errorFromStep: 0, // force to step0
+            errorMessage: errorMessage || "Error validating phone number",
+          }
         }
-      }
+
+        // If error is from step0, go back to step0
+        if (currentStep === 0) {
+          return {
+            step: 0, // Stay in step0
+            errorFromStep: 0, // force to step0
+            errorMessage: errorMessage || "Error validating phone",
+          }
+        }
 
       // Default: go to fallback (step 5)
       return {
@@ -121,11 +130,11 @@ export const useWizardStore = create<WizardState>((set) => ({
     await new Promise((resolve) => setTimeout(resolve, 3000))
     set({ step, isLoading: false })
   },
-  prevStep: () => set((state) => ({ step: Math.max(state.step - 1, 1) as Step })),
+  prevStep: () => set((state) => ({ step: Math.max(state.step - 1, 0) as Step })),
   updateFormData: (data) => set((state) => ({ formData: { ...state.formData, ...data } })),
   reset: () =>
     set({
-      step: 1,
+      step: 0,
       isLoading: false,
       errorMessage: null,
       errorFromStep: null,

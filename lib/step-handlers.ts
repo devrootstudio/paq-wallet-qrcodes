@@ -1,0 +1,232 @@
+"use client"
+
+import type { WizardState } from "./store"
+import { submitStep0Form, submitStep1Form, submitStep2Form, resendToken } from "@/app/actions"
+
+// Re-export types for convenience
+export type { WizardState }
+
+/**
+ * Handler for Step 0: Phone validation
+ */
+export async function handleStep0Submit(
+  phone: string,
+  store: Pick<WizardState, "updateFormData" | "setLoading" | "setErrorStep" | "goToStepAsync">,
+) {
+  const cleanPhone = phone.replace(/\s/g, "")
+
+  // Activate global loader
+  store.setLoading(true)
+
+  try {
+    const formDataToSubmit = {
+      phone: cleanPhone,
+    }
+
+    // Call server action to validate phone
+    const result = await submitStep0Form(formDataToSubmit)
+
+    if (result.success) {
+      // Update phone in store
+      store.updateFormData({ phone: cleanPhone })
+
+      // If client data is available, pre-fill form fields
+      if (result.clientData) {
+        // Check if all required fields are filled
+        const clientData = result.clientData
+        const allFieldsFilled =
+          clientData.identification &&
+          clientData.fullName &&
+          clientData.email &&
+          clientData.nit &&
+          clientData.startDate &&
+          clientData.salary &&
+          clientData.paymentFrequency
+
+        if (allFieldsFilled) {
+          // All data is complete, send OTP token and go to step 2
+          console.log("✅ All client data is complete, sending OTP token...")
+          store.setLoading(true)
+
+          try {
+            const tokenResult = await resendToken(cleanPhone)
+
+            if (tokenResult.success) {
+              // Token sent successfully, go to step 2
+              store.setLoading(false)
+              await store.goToStepAsync(2)
+            } else {
+              // Error sending token, go to step 1 to complete form
+              console.warn("⚠️ Could not send OTP token, redirecting to step 1")
+              const errorMsg = "Error sending OTP token"
+              store.setLoading(false)
+              store.setErrorStep("general", errorMsg)
+            }
+          } catch (error) {
+            console.error("Error sending OTP token:", error)
+            const errorMsg = "Error sending OTP token"
+            // Error sending token, go to step 1 to complete form
+            store.setLoading(false)
+            store.setErrorStep("general", errorMsg)
+          }
+        } else {
+          // Some data is missing, go to step 1 to complete
+          console.log("⚠️ Some client data is missing, redirecting to step 1")
+          store.setLoading(false)
+          await store.goToStepAsync(1)
+        }
+      } else {
+        // No client data available, go to step 1 to fill form
+        console.log("⚠️ No client data available, redirecting to step 1")
+        const errorMsg = "No client data available"
+        store.setLoading(false)
+        store.setErrorStep("general", errorMsg)
+      }
+    } else {
+      // Use setErrorStep to analyze and decide where to go
+      const errorType = result.errorType || "general"
+      const errorMsg = result.error || "Error validating phone"
+      store.setLoading(false)
+      store.setErrorStep(errorType, errorMsg)
+    }
+  } catch (error) {
+    console.error("Error submitting phone:", error)
+    const errorMsg = error instanceof Error ? error.message : "Unknown error validating phone"
+    store.setLoading(false)
+    store.setErrorStep("general", errorMsg)
+  }
+}
+
+/**
+ * Handler for Step 1: Form submission
+ */
+export async function handleStep1Submit(
+  formData: {
+    identification: string
+    fullName: string
+    phone: string
+    email: string
+    nit: string
+    startDate: string
+    salary: string
+    paymentFrequency: string
+  },
+  store: Pick<WizardState, "nextStepAsync" | "setLoading" | "setErrorStep">,
+) {
+  // Activate global loader
+  store.setLoading(true)
+
+  try {
+    // Prepare data for server action
+    const formDataToSubmit = {
+      identification: formData.identification.replace(/\s/g, ""),
+      fullName: formData.fullName.trim(),
+      phone: formData.phone.replace(/\s/g, ""),
+      email: formData.email.trim(),
+      nit: formData.nit.trim(),
+      startDate: formData.startDate,
+      salary: formData.salary,
+      paymentFrequency: formData.paymentFrequency,
+    }
+
+    // Call server action
+    const result = await submitStep1Form(formDataToSubmit)
+
+    if (result.success) {
+      // If successful, advance to next step
+      await store.nextStepAsync()
+    } else {
+      // Use setErrorStep to analyze and decide where to go
+      const errorType = result.errorType || "general"
+      const errorMsg = result.error || "Error al procesar el formulario"
+      store.setLoading(false)
+      store.setErrorStep(errorType, errorMsg)
+    }
+  } catch (error) {
+    console.error("Error submitting form:", error)
+    const errorMsg = error instanceof Error ? error.message : "Error desconocido al enviar el formulario"
+    store.setLoading(false)
+    store.setErrorStep("general", errorMsg)
+  }
+}
+
+/**
+ * Handler for Step 2: OTP token validation
+ */
+export async function handleStep2Submit(
+  phone: string,
+  token: string,
+  store: Pick<WizardState, "nextStepAsync" | "updateFormData" | "setLoading" | "setErrorStep">,
+) {
+  // Activate global loader
+  store.setLoading(true)
+
+  try {
+    // Prepare data for server action
+    const formDataToSubmit = {
+      phone: phone.replace(/\s/g, ""),
+      token: token,
+    }
+
+    // Call server action to validate token
+    const result = await submitStep2Form(formDataToSubmit)
+
+    if (result.success) {
+      // Update approved amount from response if available
+      if (result.approvedAmount !== undefined) {
+        store.updateFormData({ approvedAmount: result.approvedAmount })
+      }
+
+      // If successful, advance to next step
+      await store.nextStepAsync()
+    } else {
+      // Use setErrorStep to analyze and decide where to go
+      const errorType = result.errorType || "token"
+      const errorMsg = result.error || "Error validating token"
+      store.setLoading(false)
+      store.setErrorStep(errorType, errorMsg)
+    }
+  } catch (error) {
+    console.error("Error submitting token:", error)
+    const errorMsg = error instanceof Error ? error.message : "Unknown error validating token"
+    store.setLoading(false)
+    store.setErrorStep("token", errorMsg)
+  }
+}
+
+/**
+ * Handler for resending OTP token in Step 2
+ */
+export async function handleResendToken(
+  phone: string,
+  store: Pick<WizardState, "setLoading" | "setErrorStep">,
+  onSuccess?: () => void,
+) {
+  // Prevent resend if already processing
+  store.setLoading(true)
+
+  try {
+    const cleanPhone = phone.replace(/\s/g, "")
+    const result = await resendToken(cleanPhone)
+
+    if (result.success) {
+      // Reset countdown callback
+      if (onSuccess) {
+        onSuccess()
+      }
+    } else {
+      // If error, go to fallback
+      const errorMsg = result.error || "Error resending token"
+      store.setLoading(false)
+      store.setErrorStep(result.errorType || "token", errorMsg)
+    }
+  } catch (error) {
+    console.error("Error resending token:", error)
+    const errorMsg = error instanceof Error ? error.message : "Unknown error resending token"
+    store.setLoading(false)
+    store.setErrorStep("token", errorMsg)
+  } finally {
+    store.setLoading(false)
+  }
+}
+

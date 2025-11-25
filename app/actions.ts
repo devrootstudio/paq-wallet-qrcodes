@@ -3,6 +3,10 @@
 import { queryClient, sendTokenTyc, validateTokenTyc, validateCupo, type QueryClientResponse } from "@/lib/soap-client"
 import { sendToMakeWebhook } from "@/lib/make-integration"
 
+interface Step0FormData {
+  phone: string
+}
+
 interface Step1FormData {
   identification: string
   fullName: string
@@ -17,9 +21,161 @@ interface Step1FormData {
 interface ServerActionResponse {
   success: boolean
   error?: string
-  errorType?: "token" | "cupo" | "general" // Distinguish error types for step2
+  errorType?: "token" | "cupo" | "general" | "phone_number" // Distinguish error types for step2
   approvedAmount?: number
   idSolicitud?: string
+  clientData?: {
+    identification?: string
+    fullName?: string
+    phone?: string
+    email?: string
+    nit?: string
+    startDate?: string
+    salary?: string
+    paymentFrequency?: string
+  }
+}
+
+/**
+ * Server action for step 0: Validate phone number
+ * @param data - Phone number to validate
+ * @returns Response indicating if phone is registered
+ */
+export async function submitStep0Form(data: Step0FormData): Promise<ServerActionResponse> {
+  console.log("=== STEP 0 PHONE VALIDATION ===")
+  console.log("Timestamp:", new Date().toISOString())
+  console.log("Phone:", data.phone)
+  console.log("===============================")
+
+  try {
+    // Validate input
+    if (!data.phone) {
+      return {
+        success: false,
+        error: "Phone number is required",
+        errorType: "phone_number",
+      }
+    }
+
+    const cleanPhone = data.phone.replace(/\s/g, "")
+    if (cleanPhone.length !== 8) {
+      return {
+        success: false,
+        error: "Phone number must have 8 digits",
+        errorType: "phone_number",
+      }
+    }
+
+    // Query if client is registered by phone number
+    console.log("🔍 Querying client in system...")
+    console.log(`   Phone: ${cleanPhone}`)
+
+    let clientResponse: QueryClientResponse | null = null
+
+    try {
+      clientResponse = await queryClient(cleanPhone)
+    } catch (error) {
+      console.error("❌ Error querying client:", error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Error querying service. Please try again later.",
+        errorType: "phone_number",
+      }
+    }
+
+    // Check if query was successful
+    const returnCode = clientResponse.returnCode
+    const isSuccessful = returnCode === 0 || returnCode === "0"
+
+    if (!isSuccessful) {
+      // Client not registered or error in query
+      const errorMessage = clientResponse.message || "Phone number is not registered in the system"
+      console.error("❌ Client not found or query error:")
+      console.error(`   Code: ${returnCode}`)
+      console.error(`   Message: ${errorMessage}`)
+
+      return {
+        success: false,
+        error: errorMessage,
+        errorType: "phone_number",
+      }
+    }
+
+    // Client found - phone is valid
+    console.log("✅ Client found in system")
+    console.log(`   Code: ${returnCode}`)
+    console.log(`   Message: ${clientResponse.message}`)
+
+    // Extract client data to pre-fill form
+    const clientData = clientResponse.client
+    let mappedClientData: ServerActionResponse["clientData"] | undefined = undefined
+
+    if (clientData && typeof clientData === "object") {
+      console.log("📋 Client Data:")
+      console.log(`   ID: ${clientData.id || "N/A"}`)
+      console.log(`   Status: ${clientData.status || "N/A"}`)
+      console.log(`   Name: ${clientData.fullName || "N/A"}`)
+      console.log(`   Phone: ${clientData.phone || "N/A"}`)
+      console.log(`   Email: ${clientData.email || "N/A"}`)
+      console.log(`   NIT: ${clientData.nit || "N/A"}`)
+      console.log(`   Start Date: ${clientData.startDate || "N/A"}`)
+      console.log(`   Salary: ${clientData.monthlySalary || "N/A"}`)
+      console.log(`   Payment Frequency: ${clientData.paymentFrequency || "N/A"}`)
+
+      // Helper function to convert date from ISO format to dd-mm-yyyy
+      const formatDateToDDMMYYYY = (dateString: string | undefined): string => {
+        if (!dateString) return ""
+        try {
+          // Handle ISO format: "2025-11-05T13:25:41.307" or "2025-11-05"
+          const date = new Date(dateString)
+          if (isNaN(date.getTime())) return ""
+
+          const day = String(date.getDate()).padStart(2, "0")
+          const month = String(date.getMonth() + 1).padStart(2, "0")
+          const year = date.getFullYear()
+
+          return `${day}-${month}-${year}`
+        } catch (error) {
+          console.error("Error formatting date:", error)
+          return ""
+        }
+      }
+
+      // Helper function to convert payment frequency code to form value
+      const normalizePaymentFrequency = (frequency: string | undefined): string => {
+        if (!frequency) return ""
+        const normalized = frequency.toUpperCase()
+        if (normalized === "M") return "mensual"
+        if (normalized === "Q") return "quincenal"
+        if (normalized === "S") return "semanal"
+        return frequency.toLowerCase() // Return as-is if not recognized
+      }
+
+      // Map client data to form format
+      mappedClientData = {
+        identification: clientData.identificationNumber || "",
+        fullName: clientData.fullName || "",
+        phone: clientData.phone || cleanPhone,
+        email: clientData.email || "",
+        nit: clientData.nit || "",
+        startDate: formatDateToDDMMYYYY(clientData.startDate),
+        salary: clientData.monthlySalary || "",
+        paymentFrequency: normalizePaymentFrequency(clientData.paymentFrequency),
+      }
+    }
+
+    return {
+      success: true,
+      clientData: mappedClientData,
+    }
+  } catch (error) {
+    console.error("❌ Error in submitStep0Form:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error processing phone validation",
+      errorType: "general",
+    }
+  }
 }
 
 export async function submitStep1Form(data: Step1FormData): Promise<ServerActionResponse> {

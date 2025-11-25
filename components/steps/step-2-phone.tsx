@@ -6,10 +6,10 @@ import { useWizardStore } from "@/lib/store"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { ErrorTooltip } from "./step-1-form"
-import { submitStep2Form, resendToken } from "@/app/actions"
+import { handleStep2Submit, handleResendToken } from "@/lib/step-handlers"
 
 export default function Step2Phone() {
-  const { nextStepAsync, formData, updateFormData, setLoading, setErrorStep, isLoading } = useWizardStore()
+  const { formData, updateFormData, setLoading, setErrorStep, isLoading, nextStepAsync } = useWizardStore()
   const [otp, setOtp] = useState("")
   const [otpError, setOtpError] = useState<string | null>(null)
   const [isTouched, setIsTouched] = useState(false)
@@ -41,37 +41,29 @@ export default function Step2Phone() {
     return true
   }
 
-  const handleResendToken = async () => {
+  const handleResendTokenClick = async () => {
     // Prevent resend if countdown is active or already resending
     if (countdown > 0 || isResending) {
       return
     }
 
     setIsResending(true)
-    setLoading(true)
 
-    try {
-      const cleanPhone = formData.phone.replace(/\s/g, "")
-      const result = await resendToken(cleanPhone)
-
-      if (result.success) {
-        // Reset countdown to 10 seconds
+    // Use centralized handler
+    await handleResendToken(
+      formData.phone,
+      {
+        setLoading,
+        setErrorStep,
+      },
+      () => {
+        // Reset countdown to 10 seconds on success
         setCountdown(10)
-      } else {
-        // If error, go to fallback
-        const errorMsg = result.error || "Error resending token"
-        setLoading(false)
-        setErrorStep(result.errorType || "cupo", errorMsg)
-      }
-    } catch (error) {
-      console.error("Error resending token:", error)
-      const errorMsg = error instanceof Error ? error.message : "Unknown error resending token"
-      setLoading(false)
-      setErrorStep("cupo", errorMsg)
-    } finally {
-      setIsResending(false)
-      setLoading(false)
-    }
+        setIsResending(false)
+      },
+    )
+
+    setIsResending(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -83,41 +75,17 @@ export default function Step2Phone() {
       return
     }
 
-    // Activate global loader
-    setLoading(true)
-
-    try {
-      // Prepare data for server action
-      const formDataToSubmit = {
-        phone: formData.phone.replace(/\s/g, ""),
-        token: otp,
-      }
-
-      // Call server action to validate token
-      const result = await submitStep2Form(formDataToSubmit)
-
-      if (result.success) {
-        // Update approved amount from response if available
-        if (result.approvedAmount !== undefined) {
-          updateFormData({ approvedAmount: result.approvedAmount })
-        }
-
-        // If successful, advance to next step
-        // nextStepAsync will handle the isLoading (keep it true during transition)
-        await nextStepAsync() // await goToStepAsync(4) // skip step 3 and go directly to step 4
-      } else {
-        // Use setErrorStep to analyze and decide where to go
-        const errorType = result.errorType || "token"
-        const errorMsg = result.error || "Error validating token"
-        setLoading(false)
-        setErrorStep(errorType, errorMsg)
-      }
-    } catch (error) {
-      console.error("Error submitting token:", error)
-      const errorMsg = error instanceof Error ? error.message : "Unknown error validating token"
-      setLoading(false)
-      setErrorStep("token", errorMsg) // Default to token error type
-    }
+    // Use centralized handler
+    await handleStep2Submit(
+      formData.phone,
+      otp,
+      {
+        nextStepAsync,
+        updateFormData,
+        setLoading,
+        setErrorStep,
+      },
+    )
   }
 
   return (
@@ -153,7 +121,7 @@ export default function Step2Phone() {
             type="button"
             variant="outline"
             className="px-10 w-full max-w-xs bg-paq-yellow text-paq-green hover:bg-paq-yellow/90 border-paq-green font-semibold"
-            onClick={handleResendToken}
+            onClick={handleResendTokenClick}
             disabled={countdown > 0 || isResending || isLoading}
           >
             {isResending
