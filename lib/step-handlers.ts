@@ -27,13 +27,11 @@ export async function handleStep0Submit(
     const result = await submitStep0Form(formDataToSubmit)
 
     if (result.success) {
-      // Update phone in store
-      store.updateFormData({ phone: cleanPhone })
-
       // If client data is available, pre-fill form fields
       if (result.clientData) {
-        // Check if all required fields are filled
         const clientData = result.clientData
+
+        // Check if all required fields are filled
         const allFieldsFilled =
           clientData.identification &&
           clientData.fullName &&
@@ -44,28 +42,54 @@ export async function handleStep0Submit(
           clientData.paymentFrequency
 
         if (allFieldsFilled) {
-          // All data is complete, send OTP token and go to step 2
-          console.log("✅ All client data is complete, sending OTP token...")
+          // All data is complete, execute step 1 form submission process
+          // This will: validate client, send to webhook, send OTP token, etc.
+          console.log("✅ All client data is complete, executing step 1 form submission...")
           store.setLoading(true)
 
-          try {
-            const tokenResult = await resendToken(cleanPhone)
+          // Update store with all client data
+          store.updateFormData({
+            identification: clientData.identification || "",
+            fullName: clientData.fullName || "",
+            email: clientData.email || "",
+            nit: clientData.nit || "",
+            startDate: clientData.startDate || "",
+            salary: clientData.salary || "",
+            paymentFrequency: clientData.paymentFrequency || "",
+          })
 
-            if (tokenResult.success) {
-              // Token sent successfully, go to step 2
+          try {
+            // Prepare form data for step 1 submission
+            const step1FormData = {
+              identification: clientData.identification || "",
+              fullName: clientData.fullName || "",
+              phone: clientData.phone || cleanPhone,
+              email: clientData.email || "",
+              nit: clientData.nit || "",
+              startDate: clientData.startDate || "",
+              salary: clientData.salary || "",
+              paymentFrequency: clientData.paymentFrequency || "",
+            }
+
+            // Call submitStep1Form to execute the full process
+            // This will: validate client, send to webhook (Airtable), send OTP token
+            const step1Result = await submitStep1Form(step1FormData)
+
+            if (step1Result.success) {
+              // Step 1 process completed successfully (webhook sent, token sent, etc.)
+              // Now go to step 2
               store.setLoading(false)
               await store.goToStepAsync(2)
             } else {
-              // Error sending token, go to step 1 to complete form
-              console.warn("⚠️ Could not send OTP token, redirecting to step 1")
-              const errorMsg = "Error sending OTP token"
+              // Error in step 1 process
+              const errorType = step1Result.errorType || "general"
+              const errorMsg = step1Result.error || "Error processing form"
               store.setLoading(false)
-              store.setErrorStep("general", errorMsg)
+              store.setErrorStep(errorType, errorMsg)
             }
           } catch (error) {
-            console.error("Error sending OTP token:", error)
-            const errorMsg = "Error sending OTP token"
-            // Error sending token, go to step 1 to complete form
+            console.error("Error executing step 1 form submission:", error)
+            const errorMsg = error instanceof Error ? error.message : "Error processing form"
             store.setLoading(false)
             store.setErrorStep("general", errorMsg)
           }
