@@ -6,6 +6,30 @@ import { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { ErrorTooltip } from "./step-1-form" // importing ErrorTooltip
 
+// Helper function to calculate disbursement amount
+const calculateDisbursementAmount = (requestedAmount: number): number => {
+  if (requestedAmount < 100) {
+    return 0 // Invalid amount
+  }
+
+  let commission = 0
+  const IVA_RATE = 0.12 // 12% IVA
+
+  if (requestedAmount >= 100 && requestedAmount <= 250) {
+    // Q100 - Q250: Q15.00 + IVA (12%)
+    commission = 15 * (1 + IVA_RATE) // 15 * 1.12 = 16.80
+  } else if (requestedAmount >= 251 && requestedAmount <= 700) {
+    // Q251 - Q700: 6.5% + IVA (12%)
+    commission = requestedAmount * 0.065 * (1 + IVA_RATE) // requestedAmount * 0.0728
+  } else if (requestedAmount >= 701) {
+    // Q701 en adelante: 7.5% + IVA (12%)
+    commission = requestedAmount * 0.075 * (1 + IVA_RATE) // requestedAmount * 0.084
+  }
+
+  // Disbursement amount = requested amount - commission
+  return requestedAmount - commission
+}
+
 export default function Step3Approval() {
   const { nextStepAsync, formData, updateFormData } = useWizardStore()
   const [isEditing, setIsEditing] = useState(false)
@@ -13,6 +37,12 @@ export default function Step3Approval() {
   const [error, setError] = useState<string | null>(null) // state for validation error
 
   const APPROVED_AMOUNT = formData.approvedAmount || 0 // Get approved amount from store
+
+  // Calculate disbursement amount for display (use editAmount when editing, otherwise use formData)
+  const currentAmount = isEditing
+    ? Number.parseFloat(editAmount) || 0
+    : formData.requestedAmount || 0
+  const currentDisbursementAmount = calculateDisbursementAmount(currentAmount)
 
   const handleEditClick = () => {
     setEditAmount(formData.requestedAmount.toString())
@@ -38,8 +68,8 @@ export default function Step3Approval() {
       return
     }
 
-    if (amount < 50) {
-      setError("El monto mínimo es Q50")
+    if (amount < 100) {
+      setError("Por favor, ingresa un monto igual o mayor a Q100.")
       return
     }
 
@@ -75,10 +105,16 @@ export default function Step3Approval() {
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-paq-green font-bold text-lg">Q</span>
               <Input
                 type="number"
+                min="0"
+                step="1"
                 value={editAmount}
                 onChange={(e) => {
-                  setEditAmount(e.target.value)
-                  setError(null) // clear error on type
+                  const value = e.target.value
+                  // Prevent negative numbers and decimals - only allow integers
+                  if (value === "" || (!isNaN(Number.parseInt(value)) && Number.parseInt(value) >= 0 && !value.includes("."))) {
+                    setEditAmount(value)
+                    setError(null) // clear error on type
+                  }
                 }}
                 onFocus={handleFocus} // Added focus handler
                 onBlur={handleBlur} // Added blur handler
@@ -88,6 +124,22 @@ export default function Step3Approval() {
             </div>
           </div>
         )}
+
+        <div className="w-full px-4 mb-4 mt-4 space-y-2">
+          <>
+              <div className="text-xs text-paq-green/80 text-left leading-relaxed space-y-1">
+                <p>
+                  • Adelanto a solicitar: <span className="font-semibold">Q{currentAmount.toFixed(2)}</span> (Será debitado en tu próxima nómina). {currentDisbursementAmount > 0 && (<>Monto a depositar: <span className="font-semibold">Q{currentDisbursementAmount.toFixed(2)}</span></>)}
+                </p>
+                
+              </div>
+              {!isEditing && (
+                <p className="text-xs text-paq-green/70 text-left leading-relaxed italic mt-2">
+                  • <span className="font-semibold">Importante:</span> Al presionar <span className="font-semibold">"Solicítalo ahora"</span> se depositará automáticamente el adelanto solicitado.
+                </p>
+              )}
+            </>
+        </div>
 
         <div className="flex flex-col gap-3 w-full mt-2">
           {!isEditing ? (
