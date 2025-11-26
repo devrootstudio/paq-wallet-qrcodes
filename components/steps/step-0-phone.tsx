@@ -9,7 +9,7 @@ import { ErrorTooltip } from "./step-1-form"
 import { handleStep0Submit } from "@/lib/step-handlers"
 
 export default function Step0Phone() {
-  const { updateFormData, setLoading, setErrorStep, isLoading, goToStepAsync } = useWizardStore()
+  const { updateFormData, setLoading, setErrorStep, isLoading, goToStepAsync, formData } = useWizardStore()
   const [phone, setPhone] = useState("")
   const [phoneError, setPhoneError] = useState<string | null>(null)
   const [isTouched, setIsTouched] = useState(false)
@@ -57,6 +57,7 @@ export default function Step0Phone() {
       setLoading,
       setErrorStep,
       goToStepAsync,
+      formData,
     })
   }
 

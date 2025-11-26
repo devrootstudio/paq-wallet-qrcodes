@@ -9,11 +9,20 @@ export type { WizardState }
 /**
  * Handler for Step 0: Phone validation
  */
+// Helper function to generate authorization number
+function generateAutorizacion(): string {
+  return `AUTH-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`
+}
+
 export async function handleStep0Submit(
   phone: string,
-  store: Pick<WizardState, "updateFormData" | "setLoading" | "setErrorStep" | "goToStepAsync">,
+  store: Pick<WizardState, "updateFormData" | "setLoading" | "setErrorStep" | "goToStepAsync" | "formData">,
 ) {
   const cleanPhone = phone.replace(/\s/g, "")
+
+  // Generate authorization number at step 0 for end-to-end tracking
+  const autorizacion = generateAutorizacion()
+  store.updateFormData({ autorizacion })
 
   // Activate global loader
   store.setLoading(true)
@@ -21,6 +30,7 @@ export async function handleStep0Submit(
   try {
     const formDataToSubmit = {
       phone: cleanPhone,
+      autorizacion: autorizacion,
     }
 
     // Call server action to validate phone
@@ -70,6 +80,7 @@ export async function handleStep0Submit(
               startDate: clientData.startDate || "",
               salary: clientData.salary || "",
               paymentFrequency: clientData.paymentFrequency || "",
+              autorizacion: store.formData.autorizacion,
             }
 
             // Call submitStep1Form to execute the full process
@@ -147,7 +158,7 @@ export async function handleStep1Submit(
     salary: string
     paymentFrequency: string
   },
-  store: Pick<WizardState, "nextStepAsync" | "setLoading" | "setErrorStep" | "updateFormData" | "goToStepAsync">,
+  store: Pick<WizardState, "nextStepAsync" | "setLoading" | "setErrorStep" | "updateFormData" | "goToStepAsync" | "formData">,
 ) {
   // Activate global loader
   store.setLoading(true)
@@ -163,6 +174,7 @@ export async function handleStep1Submit(
       startDate: formData.startDate,
       salary: formData.salary,
       paymentFrequency: formData.paymentFrequency,
+      autorizacion: store.formData.autorizacion,
     }
 
     // Call server action
@@ -204,7 +216,7 @@ export async function handleStep1Submit(
 export async function handleStep2Submit(
   phone: string,
   token: string,
-  store: Pick<WizardState, "nextStepAsync" | "updateFormData" | "setLoading" | "setErrorStep">,
+  store: Pick<WizardState, "nextStepAsync" | "updateFormData" | "setLoading" | "setErrorStep" | "formData">,
 ) {
   // Activate global loader
   store.setLoading(true)
@@ -214,6 +226,7 @@ export async function handleStep2Submit(
     const formDataToSubmit = {
       phone: phone.replace(/\s/g, ""),
       token: token,
+      autorizacion: store.formData.autorizacion,
     }
 
     // Call server action to validate token

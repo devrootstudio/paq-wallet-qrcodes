@@ -90,6 +90,7 @@ export default function Step2Phone() {
         updateFormData,
         setLoading,
         setErrorStep,
+        formData,
       },
     )
   }

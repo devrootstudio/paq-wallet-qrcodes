@@ -171,6 +171,7 @@ export default function Step1Form() {
         setErrorStep,
         updateFormData,
         goToStepAsync,
+        formData,
       },
     )
   }

@@ -17,6 +17,7 @@ interface FormData {
   disbursementAmount: number // Amount to be disbursed (requestedAmount - commission with IVA)
   idSolicitud: string // Request ID from cupo validation
   hasCommissionIssue: boolean // Indicates code 34: disbursement successful but commission collection had issues
+  autorizacion: string // Authorization number generated at step 0 for end-to-end tracking
 }
 
 type ErrorType = "token" | "cupo" | "general" | "phone_number" | null
@@ -58,6 +59,7 @@ export const useWizardStore = create<WizardState>((set) => ({
     disbursementAmount: 0, // Amount to be disbursed
     idSolicitud: "", // Request ID from cupo validation
     hasCommissionIssue: false, // Indicates code 34: disbursement successful but commission collection had issues
+    autorizacion: "", // Authorization number generated at step 0 for end-to-end tracking
   },
   setStep: (step) => set({ step }),
   setLoading: (loading) => set({ isLoading: loading }),
@@ -87,6 +89,7 @@ export const useWizardStore = create<WizardState>((set) => ({
             disbursementAmount: 0,
             idSolicitud: "",
             hasCommissionIssue: false,
+            autorizacion: "",
           },
         }
       }
@@ -191,6 +194,7 @@ export const useWizardStore = create<WizardState>((set) => ({
         disbursementAmount: 0,
         idSolicitud: "",
         hasCommissionIssue: false,
+        autorizacion: "",
       },
     }),
 }))

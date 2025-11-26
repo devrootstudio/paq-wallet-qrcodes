@@ -25,6 +25,7 @@ interface WebhookPayload {
     client: any
   } | null
   clientExists: boolean
+  autorizacion?: string // Authorization number for end-to-end tracking
   timestamp: string
 }
 
@@ -64,16 +65,18 @@ function normalizeStartDate(date: string): string {
 
 /**
  * Sends form data and SOAP response to Make.com webhook
- * @param step - Current step number (1, 2, 3, etc.)
+ * @param step - Current step number (0, 1, 2, 3, etc.)
  * @param formData - Form data from the current step
  * @param soapResponse - Response from SOAP query (can be null if query failed)
  * @param clientExists - Whether the client exists in the system
+ * @param autorizacion - Authorization number for end-to-end tracking (optional)
  */
 export async function sendToMakeWebhook(
   step: number,
   formData: FormDataPayload,
   soapResponse: QueryClientResponse | null,
   clientExists: boolean,
+  autorizacion?: string,
 ): Promise<void> {
   try {
     // Transform form data before sending
@@ -97,6 +100,7 @@ export async function sendToMakeWebhook(
           }
         : null,
       clientExists,
+      ...(autorizacion && { autorizacion }),
       timestamp: new Date().toISOString(),
     }
 

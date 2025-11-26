@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input"
 import { ErrorTooltip } from "./step-1-form" // importing ErrorTooltip
 import { submitStep3Form } from "@/app/actions"
 
-// Helper function to calculate disbursement amount
-const calculateDisbursementAmount = (requestedAmount: number): number => {
+// Helper function to calculate commission
+const calculateCommission = (requestedAmount: number): number => {
   if (requestedAmount < 100) {
     return 0 // Invalid amount
   }
@@ -27,6 +27,16 @@ const calculateDisbursementAmount = (requestedAmount: number): number => {
     commission = requestedAmount * 0.075 * (1 + IVA_RATE) // requestedAmount * 0.084
   }
 
+  return commission
+}
+
+// Helper function to calculate disbursement amount
+const calculateDisbursementAmount = (requestedAmount: number): number => {
+  if (requestedAmount < 100) {
+    return 0 // Invalid amount
+  }
+
+  const commission = calculateCommission(requestedAmount)
   // Disbursement amount = requested amount - commission
   return requestedAmount - commission
 }
@@ -39,11 +49,6 @@ export default function Step3Approval() {
 
   const APPROVED_AMOUNT = formData.approvedAmount || 0 // Get approved amount from store
 
-  // Generate authorization number (timestamp-based)
-  const generateAutorizacion = (): string => {
-    return `AUTH-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`
-  }
-
   const handleRequestDisbursement = async () => {
     // Validate required data
     if (!formData.phone || !formData.idSolicitud || !formData.requestedAmount || formData.requestedAmount <= 0) {
@@ -51,11 +56,17 @@ export default function Step3Approval() {
       return
     }
 
+    // Validate authorization number exists
+    if (!formData.autorizacion) {
+      setError("Error: número de autorización no encontrado")
+      return
+    }
+
     // Calculate commission (monto - disbursementAmount)
     const comision = formData.requestedAmount - formData.disbursementAmount
 
-    // Generate authorization number
-    const autorizacion = generateAutorizacion()
+    // Use authorization number from store (generated at step 0)
+    const autorizacion = formData.autorizacion
 
     setLoading(true)
     setError(null)
@@ -90,10 +101,11 @@ export default function Step3Approval() {
     }
   }
 
-  // Calculate disbursement amount for display (use editAmount when editing, otherwise use formData)
+  // Calculate amounts for display (use editAmount when editing, otherwise use formData)
   const currentAmount = isEditing
     ? Number.parseFloat(editAmount) || 0
     : formData.requestedAmount || 0
+  const currentCommission = calculateCommission(currentAmount)
   const currentDisbursementAmount = calculateDisbursementAmount(currentAmount)
 
   const handleEditClick = () => {
@@ -178,12 +190,25 @@ export default function Step3Approval() {
         )}
 
         <div className="w-full px-4 mb-4 mt-4 space-y-2">
-          <>
+          {currentAmount < 100 && isEditing ? (
+            <p className="text-xs text-red-500 font-semibold text-center leading-relaxed">
+              El monto mínimo a solicitar es Q100. Por favor, ingresa un monto igual o mayor a Q100.
+            </p>
+          ) : (
+            <>
               <div className="text-xs text-paq-green/80 text-left leading-relaxed space-y-1">
                 <p>
-                  • Adelanto a solicitar: <span className="font-semibold">Q{currentAmount.toFixed(2)}</span> (Será debitado en tu próxima nómina). {currentDisbursementAmount > 0 && (<>Monto a depositar: <span className="font-semibold">Q{currentDisbursementAmount.toFixed(2)}</span></>)}
+                  • Monto a solicitar: <span className="font-semibold">Q{currentAmount.toFixed(2)}</span>
                 </p>
-                
+                <p>
+                  • Comisión a cobrar: <span className="font-semibold">Q{currentCommission.toFixed(2)}</span>
+                </p>
+                <p>
+                  • Monto a depositar: <span className="font-semibold">Q{currentDisbursementAmount.toFixed(2)}</span>
+                </p>
+                <p className="mt-2">
+                  • El adelanto se debitará en tu próxima nómina
+                </p>
               </div>
               {!isEditing && (
                 <p className="text-xs text-paq-green/70 text-left leading-relaxed italic mt-2">
@@ -191,6 +216,7 @@ export default function Step3Approval() {
                 </p>
               )}
             </>
+          )}
         </div>
 
         <div className="flex flex-col gap-3 w-full mt-2">

@@ -12,6 +12,7 @@ import { sendToMakeWebhook } from "@/lib/make-integration"
 
 interface Step0FormData {
   phone: string
+  autorizacion?: string // Authorization number for end-to-end tracking
 }
 
 interface Step1FormData {
@@ -23,6 +24,7 @@ interface Step1FormData {
   startDate: string
   salary: string
   paymentFrequency: string
+  autorizacion?: string // Authorization number for end-to-end tracking
 }
 
 interface ServerActionResponse {
@@ -216,7 +218,7 @@ export async function submitStep1Form(data: Step1FormData): Promise<ServerAction
     } catch (error) {
       console.error("❌ Error querying client:", error)
       // Send to webhook even if query fails
-      await sendToMakeWebhook(1, data, null, false)
+      await sendToMakeWebhook(1, data, null, false, data.autorizacion)
       return {
         success: false,
         error: error instanceof Error ? error.message : "Error querying service. Please try again later.",
@@ -237,7 +239,7 @@ export async function submitStep1Form(data: Step1FormData): Promise<ServerAction
       console.error(`   Message: ${errorMessage}`)
 
       // Send to webhook with client not found
-      await sendToMakeWebhook(1, data, clientResponse, false)
+      await sendToMakeWebhook(1, data, clientResponse, false, data.autorizacion)
 
       return {
         success: false,
@@ -272,7 +274,7 @@ export async function submitStep1Form(data: Step1FormData): Promise<ServerAction
     // - etc.
 
     // Send to webhook with successful client query
-    await sendToMakeWebhook(1, data, clientResponse, true)
+    await sendToMakeWebhook(1, data, clientResponse, true, data.autorizacion)
 
     // Send OTP token to client's phone for step 2 validation
     console.log("📱 Sending OTP token to client's phone...")
@@ -385,6 +387,7 @@ export async function submitStep1Form(data: Step1FormData): Promise<ServerAction
 interface Step2FormData {
   phone: string
   token: string
+  autorizacion?: string // Authorization number for end-to-end tracking
 }
 
 /**

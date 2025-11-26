@@ -2,8 +2,32 @@
 
 import { useWizardStore } from "@/lib/store" // Import store
 
+// Helper function to calculate commission (same logic as step-3)
+const calculateCommission = (requestedAmount: number): number => {
+  if (requestedAmount < 100) {
+    return 0 // Invalid amount
+  }
+
+  let commission = 0
+  const IVA_RATE = 0.12 // 12% IVA
+
+  if (requestedAmount >= 100 && requestedAmount <= 250) {
+    // Q100 - Q250: Q15.00 + IVA (12%)
+    commission = 15 * (1 + IVA_RATE) // 15 * 1.12 = 16.80
+  } else if (requestedAmount >= 251 && requestedAmount <= 700) {
+    // Q251 - Q700: 6.5% + IVA (12%)
+    commission = requestedAmount * 0.065 * (1 + IVA_RATE) // requestedAmount * 0.0728
+  } else if (requestedAmount >= 701) {
+    // Q701 en adelante: 7.5% + IVA (12%)
+    commission = requestedAmount * 0.075 * (1 + IVA_RATE) // requestedAmount * 0.084
+  }
+
+  return commission
+}
+
 export default function Step4Success() {
   const { formData } = useWizardStore() // Get formData
+  const commission = calculateCommission(formData.requestedAmount || 0)
 
   return (
     <div className="w-full max-w-md mx-auto px-4 py-8 flex flex-col justify-center items-center min-h-[60vh] animate-in zoom-in-95 duration-500">
@@ -15,12 +39,13 @@ export default function Step4Success() {
         <div className="w-full px-4 mt-4 space-y-2">
           <div className="text-xs text-paq-green/80 text-center leading-relaxed space-y-1">
             <p>
-              • Adelanto solicitado: <span className="font-semibold">Q{formData.requestedAmount.toFixed(2)}</span>.
+              • Monto solicitado: <span className="font-semibold">Q{formData.requestedAmount.toFixed(2)}</span>
             </p>
             <p>
-              • {formData.disbursementAmount > 0 && (
-                <>Monto desembolsado: <span className="font-semibold">Q{formData.disbursementAmount.toFixed(2)}</span></>
-              )}
+              • Comisión cobrada: <span className="font-semibold">Q{commission.toFixed(2)}</span>
+            </p>
+            <p>
+              • Monto desembolsado: <span className="font-semibold">Q{formData.disbursementAmount.toFixed(2)}</span>
             </p>
           </div>
           {formData.hasCommissionIssue && (
