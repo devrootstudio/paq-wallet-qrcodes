@@ -9,14 +9,18 @@ import { submitStep3Form } from "@/app/actions"
 
 // Helper function to calculate commission
 const calculateCommission = (requestedAmount: number): number => {
-  if (requestedAmount < 100) {
-    return 0 // Invalid amount
+  if (requestedAmount <= 0) {
+    return 0 // Invalid amount (zero or negative)
   }
 
   let commission = 0
   const IVA_RATE = 0.12 // 12% IVA
 
-  if (requestedAmount >= 100 && requestedAmount <= 250) {
+  if (requestedAmount < 100) {
+    // For amounts less than Q100, still calculate commission using Q100-Q250 rate
+    // Q15.00 + IVA (12%)
+    commission = 15 * (1 + IVA_RATE) // 15 * 1.12 = 16.80
+  } else if (requestedAmount >= 100 && requestedAmount <= 250) {
     // Q100 - Q250: Q15.00 + IVA (12%)
     commission = 15 * (1 + IVA_RATE) // 15 * 1.12 = 16.80
   } else if (requestedAmount >= 251 && requestedAmount <= 700) {
@@ -32,13 +36,14 @@ const calculateCommission = (requestedAmount: number): number => {
 
 // Helper function to calculate disbursement amount
 const calculateDisbursementAmount = (requestedAmount: number): number => {
-  if (requestedAmount < 100) {
-    return 0 // Invalid amount
+  if (requestedAmount <= 0) {
+    return 0 // Invalid amount (zero or negative)
   }
 
   const commission = calculateCommission(requestedAmount)
   // Disbursement amount = requested amount - commission
-  return requestedAmount - commission
+  // If amount is less than commission, return 0 (can't disburse negative)
+  return Math.max(0, requestedAmount - commission)
 }
 
 export default function Step3Approval() {
@@ -190,12 +195,6 @@ export default function Step3Approval() {
         )}
 
         <div className="w-full px-4 mb-4 mt-4 space-y-2">
-          {currentAmount < 100 && isEditing ? (
-            <p className="text-xs text-red-500 font-semibold text-center leading-relaxed">
-              El monto mínimo a solicitar es Q100. Por favor, ingresa un monto igual o mayor a Q100.
-            </p>
-          ) : (
-            <>
               <div className="text-xs text-paq-green/80 text-left leading-relaxed space-y-1">
                 <p>
                   • Monto a solicitar: <span className="font-semibold">Q{currentAmount.toFixed(2)}</span>
@@ -215,8 +214,6 @@ export default function Step3Approval() {
                   • <span className="font-semibold">Importante:</span> Al presionar <span className="font-semibold">"Solicítalo ahora"</span> se depositará automáticamente el adelanto solicitado.
                 </p>
               )}
-            </>
-          )}
         </div>
 
         <div className="flex flex-col gap-3 w-full mt-2">
