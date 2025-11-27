@@ -1,6 +1,5 @@
 "use server"
 
-import { headers } from "next/headers"
 import {
   queryClient,
   sendTokenTyc,
@@ -10,6 +9,7 @@ import {
   type QueryClientResponse,
 } from "@/lib/soap-client"
 import { sendToMakeWebhook } from "@/lib/make-integration"
+import { validateSecurityToken } from "@/lib/security-token"
 
 // Test mode configuration from environment variables
 const ENABLE_TEST_BYPASS = process.env.ENABLE_TEST_BYPASS === "true" || process.env.ENABLE_TEST_BYPASS === "1"
@@ -18,86 +18,27 @@ const TEST_APPROVED_AMOUNT = Number.parseInt(process.env.TEST_APPROVED_AMOUNT ||
 const TEST_ID_SOLICITUD = process.env.TEST_ID_SOLICITUD || "TEST-001"
 const TEST_TOKEN = process.env.TEST_TOKEN || "222222"
 
-// Allowed domain for Server Actions (security)
-const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || "https://paq-wallet-telopresto.vercel.app"
-const ALLOWED_DOMAINS = process.env.ALLOWED_DOMAINS
-  ? process.env.ALLOWED_DOMAINS.split(",").map((d) => d.trim())
-  : [ALLOWED_DOMAIN]
-
-// Allow localhost in development
-const isDevelopment = process.env.NODE_ENV === "development"
-const LOCALHOST_DOMAINS = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost", "http://127.0.0.1"]
-
 /**
- * Validates that the request originates from an allowed domain
+ * Validates security token for Server Actions
  * This prevents external requests from calling Server Actions directly
+ * Only requests with a valid security token (obtained from the client-side) are allowed
+ * @param providedToken - Optional token provided in the request (for additional validation)
  * @returns true if request is allowed, false otherwise
  */
-async function validateRequestOrigin(): Promise<boolean> {
+async function validateRequestSecurity(providedToken?: string): Promise<boolean> {
   try {
-    const headersList = await headers()
-    const origin = headersList.get("origin")
-    const referer = headersList.get("referer")
-    const host = headersList.get("host")
-
-    // Get the protocol (http/https) from origin or referer, default to https
-    const protocol = origin?.startsWith("https") || referer?.startsWith("https") ? "https" : "http"
+    // Validate the security token (from httpOnly cookie or provided token)
+    const isValid = await validateSecurityToken(providedToken)
     
-    // Build the request origin URL
-    let requestOrigin = origin
-    if (!requestOrigin && referer) {
-      try {
-        requestOrigin = new URL(referer).origin
-      } catch {
-        // If referer is not a valid URL, try to extract origin manually
-        const refererMatch = referer.match(/^(https?:\/\/[^\/]+)/)
-        if (refererMatch) {
-          requestOrigin = refererMatch[1]
-        }
-      }
-    }
-    if (!requestOrigin && host) {
-      requestOrigin = `${protocol}://${host}`
-    }
-
-    if (!requestOrigin) {
-      console.warn("⚠️ Security: No origin/referer header found")
+    if (!isValid) {
+      console.error("🚫 Security: Invalid or missing security token")
+      console.error("   Request blocked - Only client-side requests are allowed")
       return false
     }
-
-    // In development, allow localhost
-    if (isDevelopment) {
-      const isLocalhost = LOCALHOST_DOMAINS.some((localhostDomain) => {
-        return requestOrigin === localhostDomain || requestOrigin.startsWith(localhostDomain)
-      })
-      if (isLocalhost) {
-        console.log("✅ Security: Localhost request allowed (development mode)")
-        return true
-      }
-    }
-
-    // Check if request origin matches any allowed domain
-    const isAllowed = ALLOWED_DOMAINS.some((allowedDomain) => {
-      const normalizedAllowed = allowedDomain.replace(/\/$/, "") // Remove trailing slash
-      const normalizedOrigin = requestOrigin!.replace(/\/$/, "") // Remove trailing slash
-      return normalizedOrigin === normalizedAllowed || normalizedOrigin.startsWith(normalizedAllowed)
-    })
-
-    if (!isAllowed) {
-      console.error("🚫 Security: Request blocked - Invalid origin")
-      console.error(`   Request Origin: ${requestOrigin}`)
-      console.error(`   Allowed Domains: ${ALLOWED_DOMAINS.join(", ")}`)
-      if (isDevelopment) {
-        console.error(`   Localhost allowed: ${LOCALHOST_DOMAINS.join(", ")}`)
-      }
-      return false
-    }
-
-    console.log("✅ Security: Request origin validated")
-    console.log(`   Origin: ${requestOrigin}`)
+    
     return true
   } catch (error) {
-    console.error("❌ Security: Error validating request origin:", error)
+    console.error("❌ Security: Error validating request security:", error)
     return false
   }
 }
@@ -145,12 +86,12 @@ interface ServerActionResponse {
  * @returns Response indicating if phone is registered
  */
 export async function submitStep0Form(data: Step0FormData): Promise<ServerActionResponse> {
-  // Validate request origin
-  const isValidOrigin = await validateRequestOrigin()
-  if (!isValidOrigin) {
+  // Validate security token (only client-side requests allowed)
+  const isValid = await validateRequestSecurity()
+  if (!isValid) {
     return {
       success: false,
-      error: "Unauthorized request origin",
+      error: "Unauthorized request",
       errorType: "general",
     }
   }
@@ -317,12 +258,12 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
 }
 
 export async function submitStep1Form(data: Step1FormData): Promise<ServerActionResponse> {
-  // Validate request origin
-  const isValidOrigin = await validateRequestOrigin()
-  if (!isValidOrigin) {
+  // Validate security token (only client-side requests allowed)
+  const isValid = await validateRequestSecurity()
+  if (!isValid) {
     return {
       success: false,
-      error: "Unauthorized request origin",
+      error: "Unauthorized request",
       errorType: "general",
     }
   }
@@ -584,12 +525,12 @@ interface Step2FormData {
  * @returns Response indicating success or failure
  */
 export async function resendToken(phone: string): Promise<ServerActionResponse> {
-  // Validate request origin
-  const isValidOrigin = await validateRequestOrigin()
-  if (!isValidOrigin) {
+  // Validate security token (only client-side requests allowed)
+  const isValid = await validateRequestSecurity()
+  if (!isValid) {
     return {
       success: false,
-      error: "Unauthorized request origin",
+      error: "Unauthorized request",
       errorType: "general",
     }
   }
@@ -664,12 +605,12 @@ export async function resendToken(phone: string): Promise<ServerActionResponse> 
 }
 
 export async function submitStep2Form(data: Step2FormData): Promise<ServerActionResponse> {
-  // Validate request origin
-  const isValidOrigin = await validateRequestOrigin()
-  if (!isValidOrigin) {
+  // Validate security token (only client-side requests allowed)
+  const isValid = await validateRequestSecurity()
+  if (!isValid) {
     return {
       success: false,
-      error: "Unauthorized request origin",
+      error: "Unauthorized request",
       errorType: "general",
     }
   }
@@ -856,12 +797,12 @@ interface Step3FormData {
  * @returns Response indicating success or failure
  */
 export async function submitStep3Form(data: Step3FormData): Promise<ServerActionResponse> {
-  // Validate request origin
-  const isValidOrigin = await validateRequestOrigin()
-  if (!isValidOrigin) {
+  // Validate security token (only client-side requests allowed)
+  const isValid = await validateRequestSecurity()
+  if (!isValid) {
     return {
       success: false,
-      error: "Unauthorized request origin",
+      error: "Unauthorized request",
       errorType: "disbursement",
     }
   }

@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Geist, Geist_Mono, Montserrat } from "next/font/google"
 import "./globals.css"
+import SecurityTokenProvider from "@/components/security-token-provider"
 
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
@@ -38,7 +39,9 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={montserrat.className} suppressHydrationWarning>
-        {children}
+        <SecurityTokenProvider>
+          {children}
+        </SecurityTokenProvider>
       </body>
     </html>
   )
