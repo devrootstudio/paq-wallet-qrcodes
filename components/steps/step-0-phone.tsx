@@ -65,6 +65,9 @@ export default function Step0Phone() {
     <div className="w-full max-w-md mx-auto px-4 py-8 flex flex-col justify-center min-h-[50vh] animate-in fade-in slide-in-from-bottom-4 duration-500">
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="space-y-2">
+          <h1 className="text-2xl md:text-3xl font-bold text-white text-center mb-4">
+            Aplica a tu adelanto de salario
+          </h1>
           <label className="block text-lg text-white text-center">
             Ingresa aquí tu número de teléfono celular registrado en PAQ Wallet
           </label>
