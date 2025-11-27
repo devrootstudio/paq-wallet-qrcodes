@@ -10,6 +10,13 @@ import {
 } from "@/lib/soap-client"
 import { sendToMakeWebhook } from "@/lib/make-integration"
 
+// Test mode configuration from environment variables
+const ENABLE_TEST_BYPASS = process.env.ENABLE_TEST_BYPASS === "true" || process.env.ENABLE_TEST_BYPASS === "1"
+const TEST_PHONE = process.env.TEST_PHONE || "50502180"
+const TEST_APPROVED_AMOUNT = Number.parseInt(process.env.TEST_APPROVED_AMOUNT || "3500", 10)
+const TEST_ID_SOLICITUD = process.env.TEST_ID_SOLICITUD || "TEST-001"
+const TEST_TOKEN = process.env.TEST_TOKEN || "222222"
+
 interface Step0FormData {
   phone: string
   autorizacion?: string // Authorization number for end-to-end tracking
@@ -74,6 +81,31 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
         success: false,
         error: "Phone number must have 8 digits",
         errorType: "phone_number",
+      }
+    }
+
+    // TEST MODE: Bypass for test phone number
+    if (ENABLE_TEST_BYPASS && cleanPhone === TEST_PHONE) {
+      console.log("🧪 TEST MODE: Bypass activated for test phone number")
+      console.log(`   Phone: ${cleanPhone}`)
+      console.log("   Returning mock client data to allow progression to step 1")
+
+      // Return mock client data that will allow progression to step 1
+      // Client data is incomplete so user must fill form manually
+      const mockClientData = {
+        identification: "",
+        fullName: "",
+        phone: cleanPhone,
+        email: "",
+        nit: "",
+        startDate: "",
+        salary: "",
+        paymentFrequency: "",
+      }
+
+      return {
+        success: true,
+        clientData: mockClientData,
       }
     }
 
@@ -206,15 +238,52 @@ export async function submitStep1Form(data: Step1FormData): Promise<ServerAction
       }
     }
 
+    const cleanPhone = data.phone.replace(/\s/g, "")
+
+    // TEST MODE: Bypass for test phone number
+    if (ENABLE_TEST_BYPASS && cleanPhone === TEST_PHONE) {
+      console.log("🧪 TEST MODE: Bypass activated for test phone number")
+      console.log(`   Phone: ${cleanPhone}`)
+      console.log("   Skipping client validation and OTP sending")
+      console.log("   Sending mock data to webhook")
+
+      // Send mock data to webhook
+      const mockClientResponse: QueryClientResponse = {
+        returnCode: 0,
+        message: "TEST MODE: Mock client validation",
+        client: {
+          id: "TEST-001",
+          status: "ACTIVE",
+          identificationNumber: data.identification,
+          fullName: data.fullName,
+          phone: cleanPhone,
+          email: data.email,
+          nit: data.nit,
+          startDate: data.startDate,
+          monthlySalary: data.salary,
+          paymentFrequency: data.paymentFrequency,
+        },
+      }
+
+      await sendToMakeWebhook(1, data, mockClientResponse, true, data.autorizacion)
+
+      // Return success to proceed to step 2 (OTP)
+      console.log("✅ TEST MODE: Step 1 completed, proceeding to step 2")
+      return {
+        success: true,
+        skipStep2: false, // Go to step 2 for OTP
+      }
+    }
+
     // STEP 1: Query if client is registered by phone number
     console.log("🔍 Querying client in system...")
-    console.log(`   Phone: ${data.phone}`)
+    console.log(`   Phone: ${cleanPhone}`)
 
     let clientResponse: QueryClientResponse | null = null
     let clientExists = false
 
     try {
-      clientResponse = await queryClient(data.phone)
+      clientResponse = await queryClient(cleanPhone)
     } catch (error) {
       console.error("❌ Error querying client:", error)
       // Send to webhook even if query fails
@@ -279,6 +348,20 @@ export async function submitStep1Form(data: Step1FormData): Promise<ServerAction
     // Send OTP token to client's phone for step 2 validation
     console.log("📱 Sending OTP token to client's phone...")
     try {
+      // TEST MODE: Bypass token sending for test phone number
+      if (ENABLE_TEST_BYPASS && cleanPhone === TEST_PHONE) {
+        console.log("🧪 TEST MODE: Bypass token sending for test phone number")
+        console.log(`   Phone: ${cleanPhone}`)
+        console.log(`   Test Token: ${TEST_TOKEN}`)
+        console.log("   ✅ TEST MODE: Token sending bypassed, proceed to step 2")
+        // Continue to step 2 without sending actual token
+        // Return success to proceed to step 2 (OTP input)
+        return {
+          success: true,
+        }
+      }
+
+      // Normal flow: Send token via SOAP service
       const tokenResponse = await sendTokenTyc(data.phone)
       const tokenReturnCode = tokenResponse.returnCode
       const tokenSuccess = tokenReturnCode === 0 ||
@@ -412,6 +495,16 @@ export async function resendToken(phone: string): Promise<ServerActionResponse> 
       }
     }
 
+    // TEST MODE: Bypass for test phone number
+    if (ENABLE_TEST_BYPASS && cleanPhone === TEST_PHONE) {
+      console.log("🧪 TEST MODE: Bypass OTP resend for test phone number")
+      console.log(`   Phone: ${cleanPhone}`)
+      console.log("   ✅ TEST MODE: OTP resend bypassed successfully")
+      return {
+        success: true,
+      }
+    }
+
     // Send OTP token to client's phone
     console.log("📱 Resending OTP token to client's phone...")
     console.log(`   Phone: ${cleanPhone}`)
@@ -483,9 +576,27 @@ export async function submitStep2Form(data: Step2FormData): Promise<ServerAction
       }
     }
 
-    // Bypass token: if token is "222222", skip SOAP validation and proceed to cupo validation
-    const BYPASS_TOKEN = "222222"
-    const isBypassToken = cleanToken === BYPASS_TOKEN
+    const cleanPhone = data.phone.replace(/\s/g, "")
+
+    // TEST MODE: Bypass for test phone number
+    if (ENABLE_TEST_BYPASS && cleanPhone === TEST_PHONE) {
+      console.log("🧪 TEST MODE: Bypass activated for test phone number")
+      console.log(`   Phone: ${cleanPhone}`)
+      console.log(`   Token: ${cleanToken} (bypass - test mode)`)
+      console.log("   Skipping token validation and cupo validation")
+      console.log("   Returning mock approved amount:", TEST_APPROVED_AMOUNT)
+
+      // Return mock cupo data
+      return {
+        success: true,
+        approvedAmount: TEST_APPROVED_AMOUNT,
+        idSolicitud: TEST_ID_SOLICITUD,
+      }
+    }
+
+    // Bypass token: if token is TEST_TOKEN, skip SOAP validation and proceed to cupo validation
+    // Only works if TEST_BYPASS is enabled
+    const isBypassToken = ENABLE_TEST_BYPASS && cleanToken === TEST_TOKEN
 
     if (isBypassToken) {
       console.log("🔓 Bypass token detected - skipping token validation")
@@ -539,6 +650,19 @@ export async function submitStep2Form(data: Step2FormData): Promise<ServerAction
     // Validate cupo (credit limit) to get approved amount
     console.log("💰 Validating credit limit (cupo)...")
     console.log(`   Phone: ${data.phone}`)
+
+    // TEST MODE: Bypass cupo validation for test phone number
+    if (ENABLE_TEST_BYPASS && cleanPhone === TEST_PHONE) {
+      console.log("🧪 TEST MODE: Bypass cupo validation")
+      console.log(`   Returning mock approved amount: Q${TEST_APPROVED_AMOUNT}`)
+      console.log(`   Mock ID Solicitud: ${TEST_ID_SOLICITUD}`)
+
+      return {
+        success: true,
+        approvedAmount: TEST_APPROVED_AMOUNT,
+        idSolicitud: TEST_ID_SOLICITUD,
+      }
+    }
 
     let cupoResponse
     try {
@@ -623,6 +747,24 @@ export async function submitStep3Form(data: Step3FormData): Promise<ServerAction
         success: false,
         error: "All fields are required and valid",
         errorType: "disbursement",
+      }
+    }
+
+    const cleanPhone = data.phone.replace(/\s/g, "")
+
+    // TEST MODE: Bypass disbursement for test phone number
+    if (ENABLE_TEST_BYPASS && cleanPhone === TEST_PHONE) {
+      console.log("🧪 TEST MODE: Bypass disbursement execution")
+      console.log(`   Phone: ${cleanPhone}`)
+      console.log(`   ID Solicitud: ${data.idSolicitud}`)
+      console.log(`   Monto: Q${data.monto}`)
+      console.log(`   Comision: Q${data.comision}`)
+      console.log(`   Autorizacion: ${data.autorizacion}`)
+      console.log("   ✅ TEST MODE: Disbursement bypassed successfully")
+
+      return {
+        success: true,
+        hasCommissionIssue: false,
       }
     }
 
