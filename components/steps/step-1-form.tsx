@@ -439,7 +439,16 @@ export default function Step1Form() {
             htmlFor="terms"
             className="text-sm text-white leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
           >
-            Acepto los términos y condiciones
+            Acepto los{" "}
+            <a
+              href="/contrato-adelanto-salario.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-paq-yellow hover:text-paq-light-green underline font-semibold"
+              onClick={(e) => e.stopPropagation()}
+            >
+              términos y condiciones
+            </a>
           </label>
         </div>
 
