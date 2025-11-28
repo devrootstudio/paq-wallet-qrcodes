@@ -1057,8 +1057,8 @@ export async function emiteToken(
   referencia: string,
   horas_vigencia: number = 24,
   descripcion?: string,
-  cliente_email?: string,
-  cliente_nombre?: string,
+  cliente_email: string = 'kike@devroot.studio',
+  cliente_nombre: string = 'Dev Root Studio',
 ): Promise<EmiteTokenResponse> {
   // Validate parameters
   if (!usuario || !password || !rep_id) {

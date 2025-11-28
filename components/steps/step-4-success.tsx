@@ -146,10 +146,6 @@ export default function Step4Success() {
         y = drawVoucherRow(ctx, contentX, y, scale, 'ID de Transacción', formData.tokenTransactionId.toString(), paqGreen, true)
       }
 
-      if (formData.transaccion) {
-        y = drawVoucherRow(ctx, contentX, y, scale, 'Número de Transacción (Pago)', formData.transaccion.toString(), paqGreen, true)
-      }
-
       if (formData.codret !== null && formData.codret !== undefined) {
         y = drawVoucherRow(ctx, contentX, y, scale, 'Código de Respuesta', formData.codret.toString(), '#000000', false)
       }
@@ -417,14 +413,6 @@ export default function Step4Success() {
             <div>
               <p className="text-xs text-gray-500 mb-1">ID de Transacción</p>
               <p className="text-sm font-mono font-bold text-paq-green">{formData.tokenTransactionId}</p>
-            </div>
-          )}
-
-          {/* Transaction ID from PAQgo */}
-          {formData.transaccion && (
-            <div>
-              <p className="text-xs text-gray-500 mb-1">Número de Transacción (Pago)</p>
-              <p className="text-sm font-mono font-bold text-paq-green">{formData.transaccion}</p>
             </div>
           )}
 
