@@ -146,6 +146,11 @@ export default function Step4Success() {
         y = drawVoucherRow(ctx, contentX, y, scale, 'ID de Transacción', formData.tokenTransactionId.toString(), paqGreen, true)
       }
 
+      // PAYPAQ Código (token)
+      if (formData.token) {
+        y = drawVoucherRow(ctx, contentX, y, scale, 'PAYPAQ Código', formData.token, paqGreen, true)
+      }
+
       if (formData.codret !== null && formData.codret !== undefined) {
         y = drawVoucherRow(ctx, contentX, y, scale, 'Código de Respuesta', formData.codret.toString(), '#000000', false)
       }
@@ -175,6 +180,12 @@ export default function Step4Success() {
       ctx.lineTo(width - padding, y)
       ctx.stroke()
       y += 20 * scale
+
+      // Phone number
+      if (formData.phone) {
+        const formattedPhone = formData.phone.replace(/\s/g, '').replace(/(\d{4})(\d{4})/, '$1 $2')
+        y = drawVoucherRow(ctx, contentX, y, scale, 'Teléfono Autorizado', formattedPhone, '#000000', false)
+      }
 
       // Date and Time
       const dateTimeY = y
@@ -416,6 +427,14 @@ export default function Step4Success() {
             </div>
           )}
 
+          {/* PAYPAQ Código (token) */}
+          {formData.token && (
+            <div>
+              <p className="text-xs text-gray-500 mb-1">PAYPAQ Código</p>
+              <p className="text-sm font-mono font-bold text-paq-green">{formData.token}</p>
+            </div>
+          )}
+
           {/* Response Code */}
           {formData.codret !== null && formData.codret !== undefined && (
             <div>
@@ -429,6 +448,16 @@ export default function Step4Success() {
             <p className="text-xs text-gray-500 mb-1">Monto Pagado</p>
             <p className="text-2xl font-bold text-paq-green">Q{formData.requestedAmount?.toFixed(2) || "0.00"}</p>
           </div>
+
+          {/* Phone Number */}
+          {formData.phone && (
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Teléfono Autorizado</p>
+              <p className="text-sm font-semibold text-gray-800">
+                {formData.phone.replace(/\s/g, '').replace(/(\d{4})(\d{4})/, '$1 $2')}
+              </p>
+            </div>
+          )}
 
           {/* Date and Time */}
           <div className="grid grid-cols-2 gap-4">

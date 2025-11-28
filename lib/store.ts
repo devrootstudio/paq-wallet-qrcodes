@@ -21,6 +21,7 @@ interface FormData {
   autorizacion: string // Authorization number generated at step 0 for end-to-end tracking
   transaccion: number | null // Transaction ID from PAQgo payment
   tokenTransactionId: number | null // Transaction ID from emiteToken (step 0)
+  token: string // Payment token entered by user in step 2
   codret: number | null // Response code from PAQgo (0 = success, 99 = success with flag)
   hasCode99Flag: boolean // Flag indicating code 99 was returned from PAQgo
 }
@@ -71,6 +72,7 @@ export const useWizardStore = create<WizardState>((set) => ({
     autorizacion: "", // Authorization number generated at step 0 for end-to-end tracking
     transaccion: null, // Transaction ID from PAQgo payment
     tokenTransactionId: null, // Transaction ID from emiteToken (step 0)
+    token: "", // Payment token entered by user in step 2
     codret: null, // Response code from PAQgo (0 = success, 99 = success with flag)
     hasCode99Flag: false, // Flag indicating code 99 was returned from PAQgo
   },
@@ -104,6 +106,10 @@ export const useWizardStore = create<WizardState>((set) => ({
             hasCommissionIssue: false,
             autorizacion: "",
             transaccion: null,
+            tokenTransactionId: null,
+            token: "",
+            codret: null,
+            hasCode99Flag: false,
           },
         }
       }
@@ -229,6 +235,11 @@ export const useWizardStore = create<WizardState>((set) => ({
         idSolicitud: "",
         hasCommissionIssue: false,
         autorizacion: "",
+        transaccion: null,
+        tokenTransactionId: null,
+        token: "",
+        codret: null,
+        hasCode99Flag: false,
       },
       // No resetear el comercio en reset, ya que es específico de la sesión
     }),

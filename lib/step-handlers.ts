@@ -211,6 +211,7 @@ export async function handleStep2Submit(
         transaccion: result.transaccion || null,
         codret: result.codret || null,
         hasCode99Flag: result.hasCode99Flag || false,
+        token: token.replace(/\s/g, "").toUpperCase(), // Save the token entered by user
       })
 
       // If successful, go directly to step 4 (success/payment confirmation)
