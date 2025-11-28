@@ -6,6 +6,8 @@ import {
   validateTokenTyc,
   validateCupo,
   executeDisbursement,
+  emiteToken,
+  paqgo,
   type QueryClientResponse,
 } from "@/lib/soap-client"
 import { sendToMakeWebhook } from "@/lib/make-integration"
@@ -45,6 +47,10 @@ async function validateRequestSecurity(providedToken?: string): Promise<boolean>
 
 interface Step0FormData {
   phone: string
+  requestedAmount: number
+  usuario: string // Merchant username
+  password: string // Merchant password
+  rep_id: string // Merchant rep_id
   autorizacion?: string // Authorization number for end-to-end tracking
 }
 
@@ -68,6 +74,10 @@ interface ServerActionResponse {
   idSolicitud?: string
   skipStep2?: boolean // Indicates that step 2 (OTP) should be skipped
   hasCommissionIssue?: boolean // Indicates code 34: disbursement successful but commission collection had issues
+  token?: string | null // Payment token from emite_token
+  transaccion?: number | null // Transaction ID from emite_token or PAQgo
+  codret?: number | null // Response code from PAQgo (0 = success, 99 = success with flag)
+  hasCode99Flag?: boolean // Flag indicating code 99 was returned
   clientData?: {
     identification?: string
     fullName?: string
@@ -81,9 +91,9 @@ interface ServerActionResponse {
 }
 
 /**
- * Server action for step 0: Validate phone number
- * @param data - Phone number to validate
- * @returns Response indicating if phone is registered
+ * Server action for step 0: Emit payment token
+ * @param data - Phone number, amount, and merchant credentials
+ * @returns Response with token and transaction ID or error
  */
 export async function submitStep0Form(data: Step0FormData): Promise<ServerActionResponse> {
   // Validate security token (only client-side requests allowed)
@@ -96,9 +106,11 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
     }
   }
 
-  console.log("=== STEP 0 PHONE VALIDATION ===")
+  console.log("=== STEP 0 EMITE TOKEN ===")
   console.log("Timestamp:", new Date().toISOString())
   console.log("Phone:", data.phone)
+  console.log("Amount:", data.requestedAmount)
+  console.log("Merchant:", data.usuario)
   console.log("===============================")
 
   try {
@@ -107,7 +119,48 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
       return {
         success: false,
         error: "Phone number is required",
-        errorType: "phone_number",
+        errorType: "general",
+      }
+    }
+
+    if (!data.requestedAmount || data.requestedAmount <= 0) {
+      return {
+        success: false,
+        error: "Amount must be greater than 0",
+        errorType: "general",
+      }
+    }
+
+    if (!data.usuario || !data.password || !data.rep_id) {
+      return {
+        success: false,
+        error: "Merchant credentials are required",
+        errorType: "general",
+      }
+    }
+
+    // Validate field lengths to prevent truncation errors
+    if (data.usuario.length > 100) {
+      return {
+        success: false,
+        error: "Usuario demasiado largo",
+        errorType: "general",
+      }
+    }
+
+    if (data.password.length > 100) {
+      return {
+        success: false,
+        error: "Password demasiado largo",
+        errorType: "general",
+      }
+    }
+
+    if (data.rep_id.length > 50) {
+      return {
+        success: false,
+        error: "Rep ID demasiado largo",
+        errorType: "general",
       }
     }
 
@@ -116,136 +169,122 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
       return {
         success: false,
         error: "Phone number must have 8 digits",
-        errorType: "phone_number",
+        errorType: "general",
       }
     }
 
-    // TEST MODE: Bypass for test phone number
-    if (ENABLE_TEST_BYPASS && cleanPhone === TEST_PHONE) {
-      console.log("🧪 TEST MODE: Bypass activated for test phone number")
-      console.log(`   Phone: ${cleanPhone}`)
-      console.log("   Returning mock client data to allow progression to step 1")
+    // Generate reference - short dynamic 6 character code
+    // Use last 6 digits of timestamp for uniqueness
+    const timestamp = Date.now().toString()
+    const shortCode = timestamp.slice(-6) // Last 6 digits
+    const referencia = `REF-${shortCode}` // Total: 10 characters (REF- + 6 digits)
 
-      // Return mock client data that will allow progression to step 1
-      // Client data is incomplete so user must fill form manually
-      const mockClientData = {
-        identification: "",
-        fullName: "",
-        phone: cleanPhone,
-        email: "",
-        nit: "",
-        startDate: "",
-        salary: "",
-        paymentFrequency: "",
-      }
+    // Generate description (optional, but keep it short - max 200 chars)
+    const descripcion = `Pago rápido - ${data.usuario}`.substring(0, 200)
 
-      return {
-        success: true,
-        clientData: mockClientData,
-      }
-    }
-
-    // Query if client is registered by phone number
-    console.log("🔍 Querying client in system...")
-    console.log(`   Phone: ${cleanPhone}`)
-
-    let clientResponse: QueryClientResponse | null = null
-
+    // Handle password - try to decode if it looks URL-encoded
+    // The password "PruebaTec%1%2" might need decoding
+    let passwordToUse = data.password
     try {
-      clientResponse = await queryClient(cleanPhone)
-    } catch (error) {
-      console.error("❌ Error querying client:", error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Error querying service. Please try again later.",
-        errorType: "phone_number",
-      }
-    }
-
-    // Check if query was successful
-    const returnCode = clientResponse.returnCode
-    const isSuccessful = returnCode === 0 || returnCode === "0"
-
-    if (!isSuccessful) {
-      // Client not registered or error in query
-      const errorMessage = clientResponse.message || "Phone number is not registered in the system"
-      console.error("❌ Client not found or query error:")
-      console.error(`   Code: ${returnCode}`)
-      console.error(`   Message: ${errorMessage}`)
-
-      return {
-        success: false,
-        error: errorMessage,
-        errorType: "phone_number",
-      }
-    }
-
-    // Client found - phone is valid
-    console.log("✅ Client found in system")
-    console.log(`   Code: ${returnCode}`)
-    console.log(`   Message: ${clientResponse.message}`)
-
-    // Extract client data to pre-fill form
-    const clientData = clientResponse.client
-    let mappedClientData: ServerActionResponse["clientData"] | undefined = undefined
-
-    if (clientData && typeof clientData === "object") {
-      console.log("📋 Client Data:")
-      console.log(`   ID: ${clientData.id || "N/A"}`)
-      console.log(`   Status: ${clientData.status || "N/A"}`)
-      console.log(`   Name: ${clientData.fullName || "N/A"}`)
-      console.log(`   Phone: ${clientData.phone || "N/A"}`)
-      console.log(`   Email: ${clientData.email || "N/A"}`)
-      console.log(`   NIT: ${clientData.nit || "N/A"}`)
-      console.log(`   Start Date: ${clientData.startDate || "N/A"}`)
-      console.log(`   Salary: ${clientData.monthlySalary || "N/A"}`)
-      console.log(`   Payment Frequency: ${clientData.paymentFrequency || "N/A"}`)
-
-      // Helper function to convert date from ISO format to dd-mm-yyyy
-      const formatDateToDDMMYYYY = (dateString: string | undefined): string => {
-        if (!dateString) return ""
-        try {
-          // Handle ISO format: "2025-11-05T13:25:41.307" or "2025-11-05"
-          const date = new Date(dateString)
-          if (isNaN(date.getTime())) return ""
-
-          const day = String(date.getDate()).padStart(2, "0")
-          const month = String(date.getMonth() + 1).padStart(2, "0")
-          const year = date.getFullYear()
-
-          return `${day}-${month}-${year}`
-        } catch (error) {
-          console.error("Error formatting date:", error)
-          return ""
+      // If password contains % and looks like URL encoding, try to decode
+      if (passwordToUse.includes('%') && passwordToUse.match(/%[0-9A-Fa-f]{2}/)) {
+        const decoded = (passwordToUse)
+        // Only use decoded if it's different and makes sense
+        if (decoded !== passwordToUse && decoded.length > 0) {
+          console.log("🔓 Decoding URL-encoded password")
+          passwordToUse = decoded
         }
       }
+    } catch (e) {
+      // If decoding fails, use original password
+      console.warn("⚠️ Could not decode password, using as-is")
+    }
 
-      // Helper function to convert payment frequency code to form value
-      const normalizePaymentFrequency = (frequency: string | undefined): string => {
-        if (!frequency) return ""
-        const normalized = frequency.toUpperCase()
-        if (normalized === "M") return "mensual"
-        if (normalized === "Q") return "quincenal"
-        if (normalized === "S") return "semanal"
-        return frequency.toLowerCase() // Return as-is if not recognized
-      }
+    // Call emiteToken service - Log all parameters
+    console.log("=".repeat(80))
+    console.log("🔐 CALLING EMITE_TOKEN SERVICE")
+    console.log("=".repeat(80))
+    console.log("📋 Parameters being sent:")
+    console.log(`   usuario: "${data.usuario}"`)
+    console.log(`   password: "${passwordToUse}" (length: ${passwordToUse.length})`)
+    console.log(`   rep_id: "${data.rep_id}"`)
+    console.log(`   cliente_celular: "${cleanPhone}"`)
+    console.log(`   monto: ${data.requestedAmount}`)
+    console.log(`   referencia: "${referencia}"`)
+    console.log(`   horas_vigencia: 24`)
+    console.log(`   descripcion: "${descripcion}"`)
+    console.log("=".repeat(80))
 
-      // Map client data to form format
-      mappedClientData = {
-        identification: clientData.identificationNumber || "",
-        fullName: clientData.fullName || "",
-        phone: clientData.phone || cleanPhone,
-        email: clientData.email || "",
-        nit: clientData.nit || "",
-        startDate: formatDateToDDMMYYYY(clientData.startDate),
-        salary: clientData.monthlySalary || "",
-        paymentFrequency: normalizePaymentFrequency(clientData.paymentFrequency),
+    let tokenResponse
+    try {
+      tokenResponse = await emiteToken(
+        data.usuario,
+        passwordToUse,
+        data.rep_id,
+        cleanPhone,
+        data.requestedAmount,
+        referencia,
+        24, // horas_vigencia: 24 hours
+        descripcion, // descripcion
+      )
+        } catch (error) {
+      console.error("❌ Error calling emite_token:", error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Error calling payment service. Please try again later.",
+        errorType: "general",
       }
     }
+
+    // Check if there was a SOAP fault
+    if (tokenResponse.error || tokenResponse.faultcode) {
+      console.error("❌ SOAP Fault in emite_token response:")
+      console.error(`   Fault Code: ${tokenResponse.faultcode}`)
+      console.error(`   Fault String: ${tokenResponse.faultstring}`)
+      return {
+        success: false,
+        error: tokenResponse.faultstring || tokenResponse.mensaje || "Error en el servicio de pago",
+        errorType: "general",
+      }
+    }
+
+    // Check if token was emitted successfully (codret === 0)
+    if (tokenResponse.codret !== 0) {
+      console.error("❌ Error emitting token:")
+      console.error(`   Code: ${tokenResponse.codret}`)
+      console.error(`   Message: ${tokenResponse.mensaje}`)
+      
+      // Provide user-friendly error messages
+      let userFriendlyError = tokenResponse.mensaje || "Error al generar el token de pago"
+      
+      // Check for authentication errors
+      if (tokenResponse.mensaje && (
+        tokenResponse.mensaje.toLowerCase().includes("incorrecto") ||
+        tokenResponse.mensaje.toLowerCase().includes("password") ||
+        tokenResponse.mensaje.toLowerCase().includes("usuario") ||
+        tokenResponse.mensaje.toLowerCase().includes("rep_id")
+      )) {
+        userFriendlyError = "Error de autenticación: Las credenciales del comercio no son válidas. Por favor, contacta al administrador."
+      }
+      
+      return {
+        success: false,
+        error: userFriendlyError,
+        errorType: "general",
+      }
+    }
+
+    // Token emitted successfully
+    console.log("✅ Token emitted successfully")
+    console.log(`   Code: ${tokenResponse.codret}`)
+    console.log(`   Message: ${tokenResponse.mensaje}`)
+    console.log(`   Token: ${tokenResponse.token}`)
+    console.log(`   Transaction ID: ${tokenResponse.transaccion}`)
 
     return {
       success: true,
-      clientData: mappedClientData,
+      token: tokenResponse.token,
+      transaccion: tokenResponse.transaccion,
     }
   } catch (error) {
     console.error("❌ Error in submitStep0Form:", error)
@@ -517,6 +556,10 @@ interface Step2FormData {
   phone: string
   token: string
   autorizacion?: string // Authorization number for end-to-end tracking
+  usuario: string // Merchant username
+  password: string // Merchant password
+  rep_id: string // Merchant rep_id
+  requestedAmount: number // Requested amount for the payment
 }
 
 /**
@@ -616,10 +659,12 @@ export async function submitStep2Form(data: Step2FormData): Promise<ServerAction
   }
 
   // Server log with received data
-  console.log("=== STEP 2 FORM SUBMISSION ===")
+  console.log("=== STEP 2 FORM SUBMISSION - PAQGO PAYMENT ===")
   console.log("Timestamp:", new Date().toISOString())
   console.log("Phone:", data.phone)
   console.log("Token:", data.token)
+  console.log("Requested Amount:", data.requestedAmount)
+  console.log("Merchant:", data.rep_id)
   console.log("===============================")
 
   try {
@@ -628,157 +673,127 @@ export async function submitStep2Form(data: Step2FormData): Promise<ServerAction
       return {
         success: false,
         error: "Phone and token are required",
-        errorType: "token", // Token validation errors stay in step2
+        errorType: "token",
       }
     }
 
-    // Validate token format
-    const cleanToken = data.token.replace(/\s/g, "").toUpperCase()
-    if (cleanToken.length !== 6) {
+    if (!data.usuario || !data.password || !data.rep_id) {
       return {
         success: false,
-        error: "Token must have 6 characters",
-        errorType: "token", // Token validation errors stay in step2
+        error: "Merchant credentials are required",
+        errorType: "general",
       }
     }
 
+    // Validate token format (PAQgo expects exactly 5 characters)
+    const cleanToken = data.token.replace(/\s/g, "").toUpperCase()
+    if (cleanToken.length !== 5) {
+      return {
+        success: false,
+        error: "Token must have exactly 5 characters",
+        errorType: "token",
+      }
+    }
+
+    // PAQgo expects 5-character token
+    const paqgoToken = cleanToken
     const cleanPhone = data.phone.replace(/\s/g, "")
 
     // TEST MODE: Bypass for test phone number
     if (ENABLE_TEST_BYPASS && cleanPhone === TEST_PHONE) {
       console.log("🧪 TEST MODE: Bypass activated for test phone number")
       console.log(`   Phone: ${cleanPhone}`)
-      console.log(`   Token: ${cleanToken} (bypass - test mode)`)
-      console.log("   Skipping token validation and cupo validation")
-      console.log("   Returning mock approved amount:", TEST_APPROVED_AMOUNT)
+      console.log(`   Token: ${paqgoToken} (bypass - test mode)`)
+      console.log("   Skipping PAQgo payment processing")
+      console.log("   Returning mock transaction:", 999999)
 
-      // Return mock cupo data
+      // Return mock payment data
       return {
         success: true,
-        approvedAmount: TEST_APPROVED_AMOUNT,
-        idSolicitud: TEST_ID_SOLICITUD,
+        approvedAmount: data.requestedAmount,
+        transaccion: 999999,
       }
     }
 
-    // Bypass token: if token is TEST_TOKEN, skip SOAP validation and proceed to cupo validation
-    // Only works if TEST_BYPASS is enabled
-    const isBypassToken = ENABLE_TEST_BYPASS && cleanToken === TEST_TOKEN
+    // Execute payment using PAQgo
+    console.log("💳 Processing payment with PAQgo...")
+    console.log(`   Phone: ${cleanPhone}`)
+    console.log(`   Token: ${paqgoToken}`)
+    console.log(`   Amount: Q${data.requestedAmount}`)
 
-    if (isBypassToken) {
-      console.log("🔓 Bypass token detected - skipping token validation")
-      console.log(`   Phone: ${data.phone}`)
-      console.log(`   Token: ${cleanToken} (bypass)`)
-    } else {
-      // Validate token with SOAP service
-      console.log("🔍 Validating OTP token...")
-      console.log(`   Phone: ${data.phone}`)
-      console.log(`   Token: ${cleanToken}`)
-
-      let tokenResponse
-      try {
-        tokenResponse = await validateTokenTyc(data.phone, cleanToken)
+    let paqgoResponse
+    try {
+      paqgoResponse = await paqgo(data.usuario, data.password, data.rep_id, paqgoToken, cleanPhone)
       } catch (error) {
-        console.error("❌ Error validating token:", error)
+      console.error("❌ Error processing payment with PAQgo:", error)
         return {
           success: false,
-          error: error instanceof Error ? error.message : "Error validating token. Please try again later.",
-          errorType: "token", // Token validation errors stay in step2
-        }
+        error: error instanceof Error ? error.message : "Error processing payment. Please try again later.",
+        errorType: "token",
       }
+    }
 
-      // Check if validation was successful
-      // Code: 0 -> Token validated successfully
-      // Code: 24 -> El cliente ya aceptó los términos y condiciones (also valid)
-      // Code: 26 -> El token ingresado no es correcto.
-      const returnCode = tokenResponse.returnCode
-      const isSuccessful = returnCode === 0 || returnCode === "0"
-
-      if (!isSuccessful) {
-        // Token validation failed
-        const errorMessage = tokenResponse.message || "Invalid token. Please try again."
-        console.error("❌ Token validation failed:")
-        console.error(`   Code: ${returnCode}`)
-        console.error(`   Message: ${errorMessage}`)
+    // Check if payment was successful
+    // Code: 0 -> Payment successful
+    if (paqgoResponse.error) {
+      // SOAP Fault occurred
+      const errorMessage = paqgoResponse.faultstring || paqgoResponse.mensaje || "Error processing payment"
+      console.error("❌ PAQgo payment failed (SOAP Fault):")
+      console.error(`   Fault Code: ${paqgoResponse.faultcode}`)
+      console.error(`   Fault String: ${errorMessage}`)
 
         return {
           success: false,
           error: errorMessage,
-          errorType: "token", // Token validation errors stay in step2
-        }
-      }
-
-      // Token validated successfully
-      console.log("✅ Token validated successfully")
-      console.log(`   Code: ${returnCode}`)
-      console.log(`   Message: ${tokenResponse.message}`)
-    }
-
-    // Validate cupo (credit limit) to get approved amount
-    console.log("💰 Validating credit limit (cupo)...")
-    console.log(`   Phone: ${data.phone}`)
-
-    // TEST MODE: Bypass cupo validation for test phone number
-    if (ENABLE_TEST_BYPASS && cleanPhone === TEST_PHONE) {
-      console.log("🧪 TEST MODE: Bypass cupo validation")
-      console.log(`   Returning mock approved amount: Q${TEST_APPROVED_AMOUNT}`)
-      console.log(`   Mock ID Solicitud: ${TEST_ID_SOLICITUD}`)
-
-      return {
-        success: true,
-        approvedAmount: TEST_APPROVED_AMOUNT,
-        idSolicitud: TEST_ID_SOLICITUD,
+        errorType: "token",
       }
     }
 
-    let cupoResponse
-    try {
-      cupoResponse = await validateCupo(data.phone)
-    } catch (error) {
-      console.error("❌ Error validating cupo:", error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Error validating credit limit. Please try again later.",
-        errorType: "cupo", // Cupo errors go to fallback and reset
-      }
-    }
+    // Check codret (return code)
+    // Code: 0 -> Payment successful
+    // Code: 99 -> Payment successful (with flag)
+    const codret = paqgoResponse.codret
+    const isSuccessful = codret === 0 || codret === 99 || codret === null
 
-    // Check if cupo validation was successful
-    const cupoReturnCode = cupoResponse.returnCode
-    const cupoIsSuccessful = cupoReturnCode === 0 || cupoReturnCode === "0"
-
-    if (!cupoIsSuccessful) {
-      // Cupo validation failed
-      const errorMessage = cupoResponse.message || "Error validating credit limit"
-      console.error("❌ Cupo validation failed:")
-      console.error(`   Code: ${cupoReturnCode}`)
+    if (!isSuccessful) {
+      // Payment failed
+      const errorMessage = paqgoResponse.mensaje || "Error processing payment"
+      console.error("❌ PAQgo payment failed:")
+      console.error(`   Code: ${codret}`)
       console.error(`   Message: ${errorMessage}`)
 
       return {
         success: false,
         error: errorMessage,
-        errorType: "cupo", // Cupo errors go to fallback and reset
+        errorType: "token",
       }
     }
 
-    // Cupo validated successfully
-    console.log("✅ Credit limit validated successfully")
-    console.log(`   Code: ${cupoReturnCode}`)
-    console.log(`   Message: ${cupoResponse.message}`)
-    console.log(`   Approved Amount: Q${cupoResponse.cupoAutorizado || "N/A"}`)
-    console.log(`   Request ID: ${cupoResponse.idSolicitud || "N/A"}`)
+    // Payment successful (code 0 or 99)
+    const hasCode99Flag = codret === 99
+    if (hasCode99Flag) {
+      console.log("✅ Payment processed successfully (Code 99)")
+    } else {
+      console.log("✅ Payment processed successfully")
+    }
+    console.log(`   Code: ${codret}`)
+    console.log(`   Message: ${paqgoResponse.mensaje || "Payment successful"}`)
+    console.log(`   Transaction ID: ${paqgoResponse.transaccion || "N/A"}`)
 
-    // Return success with approved amount
+    // Return success with transaction ID and response code
     return {
       success: true,
-      approvedAmount: cupoResponse.cupoAutorizado,
-      idSolicitud: cupoResponse.idSolicitud,
+      approvedAmount: data.requestedAmount,
+      transaccion: paqgoResponse.transaccion,
+      codret: codret,
+      hasCode99Flag: hasCode99Flag,
     }
   } catch (error) {
     console.error("❌ Error in submitStep2Form:", error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error processing token validation",
-      errorType: "general", // Unknown errors default to general
+      error: error instanceof Error ? error.message : "Unknown error processing payment",
+      errorType: "general",
     }
   }
 }

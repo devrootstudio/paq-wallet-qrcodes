@@ -9,7 +9,7 @@ import { ErrorTooltip } from "./step-1-form"
 import { handleStep2Submit, handleResendToken } from "@/lib/step-handlers"
 
 export default function Step2Phone() {
-  const { formData, updateFormData, setLoading, setErrorStep, isLoading, nextStepAsync } = useWizardStore()
+  const { formData, updateFormData, setLoading, setErrorStep, isLoading, goToStepAsync, comercio } = useWizardStore()
   const [otp, setOtp] = useState("")
   const [otpError, setOtpError] = useState<string | null>(null)
   const [isTouched, setIsTouched] = useState(false)
@@ -33,8 +33,8 @@ export default function Step2Phone() {
   }, [countdown])
 
   const validateOtp = (value: string) => {
-    if (value.length !== 6) {
-      setOtpError("El código debe tener 6 caracteres")
+    if (value.length !== 5) {
+      setOtpError("El código debe tener 5 caracteres")
       return false
     }
     // Validate alphanumeric (letters and numbers only)
@@ -55,12 +55,21 @@ export default function Step2Phone() {
 
     setIsResending(true)
 
-    // Use centralized handler
+    // Verify that comercio is available
+    if (!comercio) {
+      setErrorStep("general", "Error: Comercio no encontrado")
+      setIsResending(false)
+      return
+    }
+
+    // Use centralized handler - now uses emiteToken with comercio and amount
     await handleResendToken(
       formData.phone,
       {
         setLoading,
         setErrorStep,
+        formData,
+        comercio,
       },
       () => {
         // Reset countdown to 10 seconds on success
@@ -86,11 +95,12 @@ export default function Step2Phone() {
       formData.phone,
       otp,
       {
-        nextStepAsync,
+        goToStepAsync,
         updateFormData,
         setLoading,
         setErrorStep,
         formData,
+        comercio,
       },
     )
   }
@@ -104,9 +114,9 @@ export default function Step2Phone() {
           </label>
           <div className="relative">
             <Input
-              placeholder="ABC123"
+              placeholder="ABC12"
               type="text"
-              maxLength={6}
+              maxLength={5}
               className={`h-14 text-lg tracking-widest text-center uppercase ${otpError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               value={otp}
               onChange={(e) => {

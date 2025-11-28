@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import type { Comercio } from "./comercios"
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5
 
@@ -18,9 +19,13 @@ interface FormData {
   idSolicitud: string // Request ID from cupo validation
   hasCommissionIssue: boolean // Indicates code 34: disbursement successful but commission collection had issues
   autorizacion: string // Authorization number generated at step 0 for end-to-end tracking
+  transaccion: number | null // Transaction ID from PAQgo payment
+  tokenTransactionId: number | null // Transaction ID from emiteToken (step 0)
+  codret: number | null // Response code from PAQgo (0 = success, 99 = success with flag)
+  hasCode99Flag: boolean // Flag indicating code 99 was returned from PAQgo
 }
 
-type ErrorType = "token" | "cupo" | "general" | "phone_number" | null
+type ErrorType = "token" | "cupo" | "general" | "phone_number" | "disbursement" | null
 
 export interface WizardState {
   step: Step
@@ -28,6 +33,8 @@ export interface WizardState {
   formData: FormData
   errorMessage: string | null
   errorFromStep: Step | null
+  comercio: Comercio | null
+  setComercio: (comercio: Comercio) => void
   setStep: (step: Step) => void
   setLoading: (loading: boolean) => void
   setErrorStep: (errorType?: ErrorType, errorMessage?: string) => void
@@ -44,6 +51,8 @@ export const useWizardStore = create<WizardState>((set) => ({
   isLoading: false,
   errorMessage: null,
   errorFromStep: null,
+  comercio: null,
+  setComercio: (comercio) => set({ comercio }),
   formData: {
     identification: "",
     fullName: "",
@@ -60,6 +69,10 @@ export const useWizardStore = create<WizardState>((set) => ({
     idSolicitud: "", // Request ID from cupo validation
     hasCommissionIssue: false, // Indicates code 34: disbursement successful but commission collection had issues
     autorizacion: "", // Authorization number generated at step 0 for end-to-end tracking
+    transaccion: null, // Transaction ID from PAQgo payment
+    tokenTransactionId: null, // Transaction ID from emiteToken (step 0)
+    codret: null, // Response code from PAQgo (0 = success, 99 = success with flag)
+    hasCode99Flag: false, // Flag indicating code 99 was returned from PAQgo
   },
   setStep: (step) => set({ step }),
   setLoading: (loading) => set({ isLoading: loading }),
@@ -90,6 +103,7 @@ export const useWizardStore = create<WizardState>((set) => ({
             idSolicitud: "",
             hasCommissionIssue: false,
             autorizacion: "",
+            transaccion: null,
           },
         }
       }
@@ -112,12 +126,32 @@ export const useWizardStore = create<WizardState>((set) => ({
           }
         }
 
-        // If error is from step0, go back to step0
-        if (currentStep === 0) {
+        // If error is from disbursement, go to fallback
+        if (errorType === "disbursement") {
           return {
-            step: 0, // Stay in step0
-            errorFromStep: 0, // force to step0
-            errorMessage: errorMessage || "Error validating phone",
+            step: 5, // Fallback step
+            errorFromStep: currentStep,
+            errorMessage: errorMessage || "Error executing disbursement",
+          }
+        }
+
+        // For step 0 errors, handle based on error type
+        if (currentStep === 0) {
+          // For general errors (like authentication errors), go to fallback
+          if (errorType === "general" || !errorType) {
+            return {
+              step: 5, // Go to fallback for general errors
+              errorFromStep: 0,
+              errorMessage: errorMessage || "Error al procesar la solicitud",
+            }
+          }
+          // For phone_number errors, stay in step 0 to allow retry
+          if (errorType === "phone_number") {
+            return {
+              step: 0, // Stay in step0 to allow retry
+              errorFromStep: 0,
+              errorMessage: errorMessage || "Error validating phone",
+            }
           }
         }
 
@@ -196,5 +230,6 @@ export const useWizardStore = create<WizardState>((set) => ({
         hasCommissionIssue: false,
         autorizacion: "",
       },
+      // No resetear el comercio en reset, ya que es específico de la sesión
     }),
 }))

@@ -290,7 +290,7 @@ export default function Step1Form() {
   return (
     <div className="w-full max-w-md mx-auto px-4 py-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <h1 className="text-2xl font-bold text-white mb-6 text-center">
-        Completa el formulario para aplicar a tu adelanto de salario
+        Completa tus datos para continuar con el pago
       </h1>
 
       <form onSubmit={handleSubmit} className="space-y-4">

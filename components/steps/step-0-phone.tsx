@@ -9,10 +9,13 @@ import { ErrorTooltip } from "./step-1-form"
 import { handleStep0Submit } from "@/lib/step-handlers"
 
 export default function Step0Phone() {
-  const { updateFormData, setLoading, setErrorStep, isLoading, goToStepAsync, formData } = useWizardStore()
+  const { updateFormData, setLoading, setErrorStep, isLoading, goToStepAsync, formData, comercio } = useWizardStore()
   const [phone, setPhone] = useState("")
   const [phoneError, setPhoneError] = useState<string | null>(null)
+  const [amount, setAmount] = useState("")
+  const [amountError, setAmountError] = useState<string | null>(null)
   const [isTouched, setIsTouched] = useState(false)
+  const [isAmountTouched, setIsAmountTouched] = useState(false)
 
   const validatePhone = (value: string) => {
     const cleanPhone = value.replace(/\s/g, "")
@@ -21,6 +24,24 @@ export default function Step0Phone() {
       return false
     }
     setPhoneError(null)
+    return true
+  }
+
+  const validateAmount = (value: string) => {
+    if (!value || value === "0.00" || value === "Q 0.00") {
+      setAmountError("El monto es requerido")
+      return false
+    }
+    const num = Number.parseFloat(value.replace(/[^\d.]/g, ""))
+    if (isNaN(num) || num <= 0) {
+      setAmountError("El monto debe ser mayor a Q0.00")
+      return false
+    }
+    if (num < 1) {
+      setAmountError("El monto mínimo es Q1.00")
+      return false
+    }
+    setAmountError(null)
     return true
   }
 
@@ -42,22 +63,66 @@ export default function Step0Phone() {
     return formatted
   }
 
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, "")
+    if (!val) {
+      setAmount("")
+      updateFormData({ requestedAmount: 0 })
+      if (isAmountTouched) {
+        validateAmount("")
+      }
+      return
+    }
+    const num = Number.parseInt(val, 10) / 100
+    const formatted = num.toFixed(2)
+    setAmount(formatted)
+    updateFormData({ requestedAmount: num })
+    if (isAmountTouched) {
+      validateAmount(formatted)
+    }
+  }
+
+  const formatAmountDisplay = (value: string) => {
+    if (!value || value === "0.00") return "Q 0.00"
+    const num = Number.parseFloat(value)
+    if (isNaN(num)) return "Q 0.00"
+    return new Intl.NumberFormat("es-GT", {
+      style: "currency",
+      currency: "GTQ",
+      minimumFractionDigits: 2,
+    }).format(num)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsTouched(true)
+    setIsAmountTouched(true)
 
     // Validate phone format first
-    if (!validatePhone(phone)) {
+    const isPhoneValid = validatePhone(phone)
+    const isAmountValid = validateAmount(amount)
+
+    if (!isPhoneValid || !isAmountValid) {
       return
     }
 
+    // Verify that comercio is available
+    if (!comercio) {
+      setErrorStep("general", "Error: Comercio no encontrado. Por favor, recarga la página.")
+      return
+    }
+
+    // Parse amount to number
+    const amountNum = Number.parseFloat(amount)
+    
     // Use centralized handler
-    await handleStep0Submit(phone, {
+    await handleStep0Submit(phone, amountNum, {
       updateFormData,
       setLoading,
       setErrorStep,
       goToStepAsync,
       formData,
+      comercio,
     })
   }
 
@@ -66,10 +131,10 @@ export default function Step0Phone() {
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="space-y-2">
           <h1 className="text-2xl md:text-3xl font-bold text-white text-center mb-4">
-            Aplica a tu adelanto de salario
+            Realiza tu pago
           </h1>
           <label className="block text-lg text-white text-center">
-            Ingresa aquí tu número de teléfono celular registrado en PAQ Wallet
+            Ingresa tu número de teléfono celular registrado en PAQ Wallet
           </label>
           <div className="relative">
             <Input
@@ -86,6 +151,27 @@ export default function Step0Phone() {
               autoFocus
             />
             {phoneError && <ErrorTooltip message={phoneError} />}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="block text-lg text-white text-center">
+            Ingresa el monto que deseas pagar
+          </label>
+          <div className="relative">
+            <Input
+              placeholder="Q 0.00"
+              type="text"
+              inputMode="numeric"
+              className={`h-14 text-lg tracking-widest text-center ${amountError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+              value={formatAmountDisplay(amount)}
+              onChange={handleAmountChange}
+              onBlur={() => {
+                setIsAmountTouched(true)
+                validateAmount(amount)
+              }}
+            />
+            {amountError && <ErrorTooltip message={amountError} />}
           </div>
         </div>
 

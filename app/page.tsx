@@ -1,42 +1,21 @@
-"use client"
-
-import { useWizardStore } from "@/lib/store"
-import { Spinner } from "@/components/ui/spinner"
-import Step0Phone from "@/components/steps/step-0-phone"
-import Step1Form from "@/components/steps/step-1-form"
-import Step2Phone from "@/components/steps/step-2-phone"
-import Step3Approval from "@/components/steps/step-3-approval"
-import Step4Success from "@/components/steps/step-4-success"
-import Step5Error from "@/components/steps/step-5-error"
+import { redirect } from 'next/navigation'
 
 export default function Home() {
-  const { step, isLoading } = useWizardStore()
-
-  const renderStep = () => {
-    switch (step) {
-      case 0:
-        return <Step0Phone />
-      case 1:
-        return <Step1Form />
-      case 2:
-        return <Step2Phone />
-      case 3:
-        return <Step3Approval />
-      case 4:
-        return <Step4Success />
-      case 5:
-        return <Step5Error />
-      default:
-        return <Step0Phone />
-    }
-  }
-
+  // Redirigir a una página de instrucciones o mostrar un mensaje
+  // Por ahora, mostramos un mensaje indicando que se requiere un ID
   return (
     <main className="min-h-screen w-full flex flex-col items-center justify-center bg-paq-green relative overflow-hidden">
-      {/* Optional background decoration if needed to match exact style, 
-          but plain color seems to match images best */}
-
-      <div className="w-full max-w-lg relative z-10 flex justify-center">{isLoading ? <Spinner /> : renderStep()}</div>
+      <div className="w-full max-w-lg relative z-10 flex flex-col items-center justify-center gap-6 p-8">
+        <div className="text-center space-y-4">
+          <h1 className="text-4xl font-bold text-white">PAQ Wallet QR Codes</h1>
+          <p className="text-white/80">
+            Para acceder al sistema de pago, escanea el código QR del comercio.
+          </p>
+          <p className="text-white/60 text-sm">
+            La URL debe tener el formato: /pos/[id]
+          </p>
+        </div>
+      </div>
     </main>
   )
 }

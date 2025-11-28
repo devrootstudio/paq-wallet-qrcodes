@@ -16,13 +16,22 @@ function generateAutorizacion(): string {
 
 export async function handleStep0Submit(
   phone: string,
-  store: Pick<WizardState, "updateFormData" | "setLoading" | "setErrorStep" | "goToStepAsync" | "formData">,
+  requestedAmount: number,
+  store: Pick<WizardState, "updateFormData" | "setLoading" | "setErrorStep" | "goToStepAsync" | "formData" | "comercio">,
 ) {
   const cleanPhone = phone.replace(/\s/g, "")
 
+  // Validate that comercio is available
+  if (!store.comercio) {
+    console.error("❌ Comercio not found in store")
+    store.setLoading(false)
+    store.setErrorStep("general", "Error: Comercio no encontrado")
+    return
+  }
+
   // Generate authorization number at step 0 for end-to-end tracking
   const autorizacion = generateAutorizacion()
-  store.updateFormData({ autorizacion })
+  store.updateFormData({ autorizacion, requestedAmount, phone: cleanPhone })
 
   // Activate global loader
   store.setLoading(true)
@@ -30,115 +39,38 @@ export async function handleStep0Submit(
   try {
     const formDataToSubmit = {
       phone: cleanPhone,
+      requestedAmount: requestedAmount,
+      usuario: store.comercio.user,
+      password: store.comercio.password,
+      rep_id: store.comercio.rep_id,
       autorizacion: autorizacion,
     }
 
-    // Call server action to validate phone
+    // Call server action to emit token
     const result = await submitStep0Form(formDataToSubmit)
 
     if (result.success) {
-      // If client data is available, pre-fill form fields
-      if (result.clientData) {
-        const clientData = result.clientData
-
-        // Check if all required fields are filled
-        const allFieldsFilled =
-          clientData.identification &&
-          clientData.fullName &&
-          clientData.email &&
-          clientData.nit &&
-          clientData.startDate &&
-          clientData.salary &&
-          clientData.paymentFrequency
-
-        if (allFieldsFilled) {
-          // All data is complete, execute step 1 form submission process
-          // This will: validate client, send to webhook, send OTP token, etc.
-          console.log("✅ All client data is complete, executing step 1 form submission...")
-          store.setLoading(true)
-
-          // Update store with all client data
-          store.updateFormData({
-            identification: clientData.identification || "",
-            phone: clientData.phone || cleanPhone,
-            fullName: clientData.fullName || "",
-            email: clientData.email || "",
-            nit: clientData.nit || "",
-            startDate: clientData.startDate || "",
-            salary: clientData.salary || "",
-            paymentFrequency: clientData.paymentFrequency || "",
-          })
-
-          try {
-            // Prepare form data for step 1 submission
-            const step1FormData = {
-              identification: clientData.identification || "",
-              fullName: clientData.fullName || "",
-              phone: clientData.phone || cleanPhone,
-              email: clientData.email || "",
-              nit: clientData.nit || "",
-              startDate: clientData.startDate || "",
-              salary: clientData.salary || "",
-              paymentFrequency: clientData.paymentFrequency || "",
-              autorizacion: store.formData.autorizacion,
-            }
-
-            // Call submitStep1Form to execute the full process
-            // This will: validate client, send to webhook (Airtable), send OTP token
-            const step1Result = await submitStep1Form(step1FormData)
-
-            if (step1Result.success) {
-              // Check if we should skip step 2 (OTP validation)
-              if (step1Result.skipStep2 && step1Result.approvedAmount !== undefined) {
-                // Client already accepted terms (Code 24), cupo validated, skip to step 3
-                console.log("⏭️ Skipping step 2 (OTP), going directly to step 3")
-                store.updateFormData({
-                  approvedAmount: step1Result.approvedAmount,
-                  idSolicitud: step1Result.idSolicitud || "",
-                })
-                store.setLoading(false)
-                await store.goToStepAsync(3)
-              } else {
-                // Normal flow: go to step 2 for OTP validation
-                store.setLoading(false)
-                await store.goToStepAsync(2)
-              }
-            } else {
-              // Error in step 1 process
-              const errorType = step1Result.errorType || "general"
-              const errorMsg = step1Result.error || "Error processing form"
-              store.setLoading(false)
-              store.setErrorStep(errorType, errorMsg)
-            }
-          } catch (error) {
-            console.error("Error executing step 1 form submission:", error)
-            const errorMsg = error instanceof Error ? error.message : "Error processing form"
-            store.setLoading(false)
-            store.setErrorStep("general", errorMsg)
-          }
-        } else {
-          // Some data is missing, go to step 1 to complete
-          console.log("⚠️ Some client data is missing, redirecting to step 1")
-          store.setLoading(false)
-          await store.goToStepAsync(1)
-        }
-      } else {
-        // No client data available, go to step 1 to fill form
-        console.log("⚠️ No client data available, redirecting to step 1")
-        const errorMsg = "No client data available"
-        store.setLoading(false)
-        store.setErrorStep("general", errorMsg)
-      }
+      // Token emitted successfully, save token and transaction ID
+      console.log("✅ Token emitted successfully, going to step 2")
+      store.updateFormData({
+        // Save transaction ID from emiteToken
+        tokenTransactionId: result.transaccion || null,
+      })
+      
+      // Go to step 2 (token input)
+      store.setLoading(false)
+      await store.goToStepAsync(2)
     } else {
-      // Use setErrorStep to analyze and decide where to go
+      // Error emitting token, go to step 5 (fallback)
       const errorType = result.errorType || "general"
-      const errorMsg = result.error || "Error validating phone"
+      const errorMsg = result.error || "Error al generar el token de pago"
+      console.error("❌ Error emitting token:", errorMsg)
       store.setLoading(false)
       store.setErrorStep(errorType, errorMsg)
     }
   } catch (error) {
-    console.error("Error submitting phone:", error)
-    const errorMsg = error instanceof Error ? error.message : "Unknown error validating phone"
+    console.error("❌ Error in handleStep0Submit:", error)
+    const errorMsg = error instanceof Error ? error.message : "Error desconocido al procesar la solicitud"
     store.setLoading(false)
     store.setErrorStep("general", errorMsg)
   }
@@ -211,78 +143,138 @@ export async function handleStep1Submit(
 }
 
 /**
- * Handler for Step 2: OTP token validation
+ * Handler for Step 2: Payment token validation and processing with PAQgo
  */
 export async function handleStep2Submit(
   phone: string,
   token: string,
-  store: Pick<WizardState, "nextStepAsync" | "updateFormData" | "setLoading" | "setErrorStep" | "formData">,
+  store: Pick<WizardState, "goToStepAsync" | "updateFormData" | "setLoading" | "setErrorStep" | "formData" | "comercio">,
 ) {
+  // Validate that comercio is available
+  if (!store.comercio) {
+    console.error("❌ Comercio not found in store")
+    store.setLoading(false)
+    store.setErrorStep("general", "Error: Comercio no encontrado")
+    return
+  }
+
+  // Validate that requested amount is available
+  if (!store.formData.requestedAmount || store.formData.requestedAmount <= 0) {
+    console.error("❌ Requested amount not found")
+    store.setLoading(false)
+    store.setErrorStep("general", "Error: Monto no encontrado")
+    return
+  }
+
   // Activate global loader
   store.setLoading(true)
 
   try {
-    // Prepare data for server action
+    // Prepare data for server action (PAQgo payment)
     const formDataToSubmit = {
       phone: phone.replace(/\s/g, ""),
       token: token,
       autorizacion: store.formData.autorizacion,
+      usuario: store.comercio.user,
+      password: store.comercio.password,
+      rep_id: store.comercio.rep_id,
+      requestedAmount: store.formData.requestedAmount,
     }
 
-    // Call server action to validate token
+    // Call server action to process payment with PAQgo
     const result = await submitStep2Form(formDataToSubmit)
 
     if (result.success) {
-      // Update approved amount and idSolicitud from response if available
-      if (result.approvedAmount !== undefined) {
-        store.updateFormData({
-          approvedAmount: result.approvedAmount,
-          idSolicitud: result.idSolicitud || "",
-        })
-      }
+      // Update transaction data from response
+      store.updateFormData({
+        approvedAmount: result.approvedAmount || store.formData.requestedAmount,
+        transaccion: result.transaccion || null,
+        codret: result.codret || null,
+        hasCode99Flag: result.hasCode99Flag || false,
+      })
 
-      // If successful, advance to next step
-      await store.nextStepAsync()
+      // If successful, go directly to step 4 (success/payment confirmation)
+      store.setLoading(false)
+      await store.goToStepAsync(4)
     } else {
       // Use setErrorStep to analyze and decide where to go
       const errorType = result.errorType || "token"
-      const errorMsg = result.error || "Error validating token"
+      const errorMsg = result.error || "Error procesando el pago"
       store.setLoading(false)
       store.setErrorStep(errorType, errorMsg)
     }
   } catch (error) {
-    console.error("Error submitting token:", error)
-    const errorMsg = error instanceof Error ? error.message : "Unknown error validating token"
+    console.error("Error submitting payment:", error)
+    const errorMsg = error instanceof Error ? error.message : "Unknown error processing payment"
     store.setLoading(false)
     store.setErrorStep("token", errorMsg)
   }
 }
 
 /**
- * Handler for resending OTP token in Step 2
+ * Handler for resending payment token in Step 2
+ * Uses emiteToken to regenerate the payment token
  */
 export async function handleResendToken(
   phone: string,
-  store: Pick<WizardState, "setLoading" | "setErrorStep">,
+  store: Pick<WizardState, "setLoading" | "setErrorStep" | "formData" | "comercio">,
   onSuccess?: () => void,
 ) {
+  // Validate that comercio is available
+  if (!store.comercio) {
+    console.error("❌ Comercio not found in store")
+    store.setLoading(false)
+    store.setErrorStep("general", "Error: Comercio no encontrado")
+    return
+  }
+
+  // Validate that we have the required data
+  if (!store.formData.requestedAmount || store.formData.requestedAmount <= 0) {
+    console.error("❌ Requested amount not found")
+    store.setLoading(false)
+    store.setErrorStep("general", "Error: Monto no encontrado")
+    return
+  }
+
   // Prevent resend if already processing
   store.setLoading(true)
 
   try {
     const cleanPhone = phone.replace(/\s/g, "")
-    const result = await resendToken(cleanPhone)
+
+    // Generate new reference for the resend
+    const timestamp = Date.now().toString()
+    const shortCode = timestamp.slice(-6)
+    const referencia = `REF-${shortCode}`
+
+    // Generate authorization if not exists
+    const autorizacion = store.formData.autorizacion || generateAutorizacion()
+
+    const formDataToSubmit = {
+      phone: cleanPhone,
+      requestedAmount: store.formData.requestedAmount,
+      usuario: store.comercio.user,
+      password: store.comercio.password,
+      rep_id: store.comercio.rep_id,
+      autorizacion: autorizacion,
+    }
+
+    // Call server action to emit token (same as step 0)
+    const result = await submitStep0Form(formDataToSubmit)
 
     if (result.success) {
+      console.log("✅ Token re-emitted successfully")
       // Reset countdown callback
       if (onSuccess) {
         onSuccess()
       }
     } else {
       // If error, go to fallback
-      const errorMsg = result.error || "Error resending token"
+      const errorType = result.errorType || "general"
+      const errorMsg = result.error || "Error al reenviar el token de pago"
+      console.error("❌ Error re-emitting token:", errorMsg)
       store.setLoading(false)
-      store.setErrorStep(result.errorType || "token", errorMsg)
+      store.setErrorStep(errorType, errorMsg)
     }
   } catch (error) {
     console.error("Error resending token:", error)
