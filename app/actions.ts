@@ -110,7 +110,18 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
   console.log("Timestamp:", new Date().toISOString())
   console.log("Phone:", data.phone)
   console.log("Amount:", data.requestedAmount)
-  console.log("Merchant:", data.usuario)
+  console.log("Merchant Usuario:", data.usuario)
+  console.log("Merchant Rep ID:", data.rep_id)
+  console.log("Merchant Password Length:", data.password?.length || 0)
+  console.log("Full Data:", JSON.stringify({
+    phone: data.phone,
+    requestedAmount: data.requestedAmount,
+    usuario: data.usuario,
+    rep_id: data.rep_id,
+    hasPassword: !!data.password,
+    passwordLength: data.password?.length || 0,
+    autorizacion: data.autorizacion,
+  }, null, 2))
   console.log("===============================")
 
   try {

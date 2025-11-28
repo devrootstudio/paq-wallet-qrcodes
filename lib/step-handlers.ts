@@ -37,6 +37,16 @@ export async function handleStep0Submit(
   store.setLoading(true)
 
   try {
+    // Log comercio data for debugging
+    console.log("📋 Comercio data from store:", {
+      id: store.comercio.id,
+      name: store.comercio.name,
+      user: store.comercio.user,
+      rep_id: store.comercio.rep_id,
+      hasPassword: !!store.comercio.password,
+      passwordLength: store.comercio.password?.length || 0,
+    })
+
     const formDataToSubmit = {
       phone: cleanPhone,
       requestedAmount: requestedAmount,
@@ -45,6 +55,16 @@ export async function handleStep0Submit(
       rep_id: store.comercio.rep_id,
       autorizacion: autorizacion,
     }
+
+    console.log("📤 Submitting to server action:", {
+      phone: formDataToSubmit.phone,
+      requestedAmount: formDataToSubmit.requestedAmount,
+      usuario: formDataToSubmit.usuario,
+      rep_id: formDataToSubmit.rep_id,
+      hasPassword: !!formDataToSubmit.password,
+      passwordLength: formDataToSubmit.password?.length || 0,
+      autorizacion: formDataToSubmit.autorizacion,
+    })
 
     // Call server action to emit token
     const result = await submitStep0Form(formDataToSubmit)

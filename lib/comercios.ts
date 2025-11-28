@@ -57,6 +57,9 @@ export async function getComercios(): Promise<Comercio[]> {
       return {
         id: fields['uid'] || record.id || '',
         name: fields['pos-name'] || '',
+        user: fields['user'] || '',
+        password: fields['password'] || '',
+        rep_id: fields['rep-id'] || '',
         logo: logoUrl,
       }
     }).filter(comercio => comercio.id && comercio.name) // Filter out invalid records
