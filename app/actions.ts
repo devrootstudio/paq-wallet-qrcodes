@@ -12,6 +12,7 @@ import {
 } from "@/lib/soap-client"
 import { sendToMakeWebhook } from "@/lib/make-integration"
 import { validateSecurityToken } from "@/lib/security-token"
+import { getComercioByIdServer } from "@/lib/comercios-server"
 
 // Test mode configuration from environment variables
 const ENABLE_TEST_BYPASS = process.env.ENABLE_TEST_BYPASS === "true" || process.env.ENABLE_TEST_BYPASS === "1"
@@ -48,9 +49,7 @@ async function validateRequestSecurity(providedToken?: string): Promise<boolean>
 interface Step0FormData {
   phone: string
   requestedAmount: number
-  usuario: string // Merchant username
-  password: string // Merchant password
-  rep_id: string // Merchant rep_id
+  comercioId: string // Merchant ID (server will fetch credentials)
   autorizacion?: string // Authorization number for end-to-end tracking
 }
 
@@ -74,7 +73,7 @@ interface ServerActionResponse {
   idSolicitud?: string
   skipStep2?: boolean // Indicates that step 2 (OTP) should be skipped
   hasCommissionIssue?: boolean // Indicates code 34: disbursement successful but commission collection had issues
-  token?: string | null // Payment token from emite_token
+  token?: string | null // Payment token from emite_token (NOT exposed to client for security)
   transaccion?: number | null // Transaction ID from emite_token or PAQgo
   codret?: number | null // Response code from PAQgo (0 = success, 99 = success with flag)
   hasCode99Flag?: boolean // Flag indicating code 99 was returned
@@ -110,18 +109,7 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
   console.log("Timestamp:", new Date().toISOString())
   console.log("Phone:", data.phone)
   console.log("Amount:", data.requestedAmount)
-  console.log("Merchant Usuario:", data.usuario)
-  console.log("Merchant Rep ID:", data.rep_id)
-  console.log("Merchant Password Length:", data.password?.length || 0)
-  console.log("Full Data:", JSON.stringify({
-    phone: data.phone,
-    requestedAmount: data.requestedAmount,
-    usuario: data.usuario,
-    rep_id: data.rep_id,
-    hasPassword: !!data.password,
-    passwordLength: data.password?.length || 0,
-    autorizacion: data.autorizacion,
-  }, null, 2))
+  console.log("Comercio ID:", data.comercioId)
   console.log("===============================")
 
   try {
@@ -142,16 +130,34 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
       }
     }
 
-    if (!data.usuario || !data.password || !data.rep_id) {
+    if (!data.comercioId) {
       return {
         success: false,
-        error: "Merchant credentials are required",
+        error: "Merchant ID is required",
+        errorType: "general",
+      }
+    }
+
+    // Fetch merchant credentials from server (never expose to client)
+    const comercio = await getComercioByIdServer(data.comercioId)
+    if (!comercio) {
+      return {
+        success: false,
+        error: "Merchant not found",
+        errorType: "general",
+      }
+    }
+
+    if (!comercio.user || !comercio.password || !comercio.rep_id) {
+      return {
+        success: false,
+        error: "Merchant credentials are incomplete",
         errorType: "general",
       }
     }
 
     // Validate field lengths to prevent truncation errors
-    if (data.usuario.length > 100) {
+    if (comercio.user.length > 100) {
       return {
         success: false,
         error: "Usuario demasiado largo",
@@ -159,7 +165,7 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
       }
     }
 
-    if (data.password.length > 100) {
+    if (comercio.password.length > 100) {
       return {
         success: false,
         error: "Password demasiado largo",
@@ -167,7 +173,7 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
       }
     }
 
-    if (data.rep_id.length > 50) {
+    if (comercio.rep_id.length > 50) {
       return {
         success: false,
         error: "Rep ID demasiado largo",
@@ -191,15 +197,14 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
     const referencia = `REF-${shortCode}` // Total: 10 characters (REF- + 6 digits)
 
     // Generate description (optional, but keep it short - max 200 chars)
-    const descripcion = `Pago rápido - ${data.usuario}`.substring(0, 200)
+    const descripcion = `Pago rápido - ${comercio.name}`.substring(0, 200)
 
     // Handle password - try to decode if it looks URL-encoded
-    // The password "PruebaTec%1%2" might need decoding
-    let passwordToUse = data.password
+    let passwordToUse = comercio.password
     try {
       // If password contains % and looks like URL encoding, try to decode
       if (passwordToUse.includes('%') && passwordToUse.match(/%[0-9A-Fa-f]{2}/)) {
-        const decoded = (passwordToUse)
+        const decoded = decodeURIComponent(passwordToUse)
         // Only use decoded if it's different and makes sense
         if (decoded !== passwordToUse && decoded.length > 0) {
           console.log("🔓 Decoding URL-encoded password")
@@ -211,14 +216,14 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
       console.warn("⚠️ Could not decode password, using as-is")
     }
 
-    // Call emiteToken service - Log all parameters
+    // Call emiteToken service - Log all parameters (sensitive data only in server logs)
     console.log("=".repeat(80))
     console.log("🔐 CALLING EMITE_TOKEN SERVICE")
     console.log("=".repeat(80))
     console.log("📋 Parameters being sent:")
-    console.log(`   usuario: "${data.usuario}"`)
+    console.log(`   usuario: "${comercio.user}"`)
     console.log(`   password: "${passwordToUse}" (length: ${passwordToUse.length})`)
-    console.log(`   rep_id: "${data.rep_id}"`)
+    console.log(`   rep_id: "${comercio.rep_id}"`)
     console.log(`   cliente_celular: "${cleanPhone}"`)
     console.log(`   monto: ${data.requestedAmount}`)
     console.log(`   referencia: "${referencia}"`)
@@ -229,9 +234,9 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
     let tokenResponse
     try {
       tokenResponse = await emiteToken(
-        data.usuario,
+        comercio.user,
         passwordToUse,
-        data.rep_id,
+        comercio.rep_id,
         cleanPhone,
         data.requestedAmount,
         referencia,
@@ -289,12 +294,12 @@ export async function submitStep0Form(data: Step0FormData): Promise<ServerAction
     console.log("✅ Token emitted successfully")
     console.log(`   Code: ${tokenResponse.codret}`)
     console.log(`   Message: ${tokenResponse.mensaje}`)
-    console.log(`   Token: ${tokenResponse.token}`)
+    console.log(`   Token: ${tokenResponse.token}`) // Only in server logs, not exposed to client
     console.log(`   Transaction ID: ${tokenResponse.transaccion}`)
 
+    // Return only transaction ID, NOT the token (security: token should not be exposed to client)
     return {
       success: true,
-      token: tokenResponse.token,
       transaccion: tokenResponse.transaccion,
     }
   } catch (error) {
@@ -567,9 +572,7 @@ interface Step2FormData {
   phone: string
   token: string
   autorizacion?: string // Authorization number for end-to-end tracking
-  usuario: string // Merchant username
-  password: string // Merchant password
-  rep_id: string // Merchant rep_id
+  comercioId: string // Merchant ID (server will fetch credentials)
   requestedAmount: number // Requested amount for the payment
 }
 
@@ -675,7 +678,7 @@ export async function submitStep2Form(data: Step2FormData): Promise<ServerAction
   console.log("Phone:", data.phone)
   console.log("Token:", data.token)
   console.log("Requested Amount:", data.requestedAmount)
-  console.log("Merchant:", data.rep_id)
+  console.log("Comercio ID:", data.comercioId)
   console.log("===============================")
 
   try {
@@ -688,10 +691,28 @@ export async function submitStep2Form(data: Step2FormData): Promise<ServerAction
       }
     }
 
-    if (!data.usuario || !data.password || !data.rep_id) {
+    if (!data.comercioId) {
       return {
         success: false,
-        error: "Merchant credentials are required",
+        error: "Merchant ID is required",
+        errorType: "general",
+      }
+    }
+
+    // Fetch merchant credentials from server (never expose to client)
+    const comercio = await getComercioByIdServer(data.comercioId)
+    if (!comercio) {
+      return {
+        success: false,
+        error: "Merchant not found",
+        errorType: "general",
+      }
+    }
+
+    if (!comercio.user || !comercio.password || !comercio.rep_id) {
+      return {
+        success: false,
+        error: "Merchant credentials are incomplete",
         errorType: "general",
       }
     }
@@ -726,15 +747,32 @@ export async function submitStep2Form(data: Step2FormData): Promise<ServerAction
       }
     }
 
+    // Handle password - try to decode if it looks URL-encoded
+    let passwordToUse = comercio.password
+    try {
+      if (passwordToUse.includes('%') && passwordToUse.match(/%[0-9A-Fa-f]{2}/)) {
+        const decoded = decodeURIComponent(passwordToUse)
+        if (decoded !== passwordToUse && decoded.length > 0) {
+          console.log("🔓 Decoding URL-encoded password")
+          passwordToUse = decoded
+        }
+      }
+    } catch (e) {
+      console.warn("⚠️ Could not decode password, using as-is")
+    }
+
     // Execute payment using PAQgo
     console.log("💳 Processing payment with PAQgo...")
     console.log(`   Phone: ${cleanPhone}`)
     console.log(`   Token: ${paqgoToken}`)
     console.log(`   Amount: Q${data.requestedAmount}`)
+    console.log(`   Usuario: ${comercio.user}`)
+    console.log(`   Rep ID: ${comercio.rep_id}`)
+    console.log(`   Password length: ${passwordToUse.length}`)
 
     let paqgoResponse
     try {
-      paqgoResponse = await paqgo(data.usuario, data.password, data.rep_id, paqgoToken, cleanPhone)
+      paqgoResponse = await paqgo(comercio.user, passwordToUse, comercio.rep_id, paqgoToken, cleanPhone)
       } catch (error) {
       console.error("❌ Error processing payment with PAQgo:", error)
         return {

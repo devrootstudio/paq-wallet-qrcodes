@@ -8,11 +8,19 @@ const AIRTABLE_TABLE_ID = process.env.AIRTABLE_TABLE_ID || 'tblVsy8Ux7EIqGvja'
 // Initialize Airtable base
 const base = AIRTABLE_API_KEY ? new Airtable({ apiKey: AIRTABLE_API_KEY }).base(AIRTABLE_BASE_ID) : null
 
-export interface Comercio {
+// Internal interface with sensitive data (server-side only)
+export interface ComercioInternal {
   name: string
   user: string
   rep_id: string
   password: string
+  id: string
+  logo?: string
+}
+
+// Public interface for client-side (no sensitive data)
+export interface Comercio {
+  name: string
   id: string
   logo?: string // URL del logo desde Airtable
 }
@@ -54,12 +62,10 @@ export async function getComercios(): Promise<Comercio[]> {
         }
       }
       
+      // Return only public data (no sensitive credentials)
       return {
         id: fields['uid'] || record.id || '',
         name: fields['pos-name'] || '',
-        user: fields['user'] || '',
-        password: fields['password'] || '',
-        rep_id: fields['rep-id'] || '',
         logo: logoUrl,
       }
     }).filter(comercio => comercio.id && comercio.name) // Filter out invalid records
@@ -74,7 +80,7 @@ export async function getComercios(): Promise<Comercio[]> {
 }
 
 /**
- * Busca un comercio por su ID (uid en Airtable)
+ * Busca un comercio por su ID (uid en Airtable) - Returns public data only
  */
 export async function getComercioById(id: string): Promise<Comercio | null> {
   if (!base) {
@@ -116,12 +122,10 @@ export async function getComercioById(id: string): Promise<Comercio | null> {
       }
     }
     
+    // Return only public data (no sensitive credentials)
     const comercio: Comercio = {
       id: fields['uid'] || record.id || '',
       name: fields['pos-name'] || '',
-      user: fields['user'] || '',
-      password: fields['password'] || '',
-      rep_id: fields['rep-id'] || '',
       logo: logoUrl,
     }
 

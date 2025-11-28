@@ -37,32 +37,18 @@ export async function handleStep0Submit(
   store.setLoading(true)
 
   try {
-    // Log comercio data for debugging
-    console.log("📋 Comercio data from store:", {
-      id: store.comercio.id,
-      name: store.comercio.name,
-      user: store.comercio.user,
-      rep_id: store.comercio.rep_id,
-      hasPassword: !!store.comercio.password,
-      passwordLength: store.comercio.password?.length || 0,
-    })
-
+    // Only send comercio ID to server (no sensitive data)
     const formDataToSubmit = {
       phone: cleanPhone,
       requestedAmount: requestedAmount,
-      usuario: store.comercio.user,
-      password: store.comercio.password,
-      rep_id: store.comercio.rep_id,
+      comercioId: store.comercio.id, // Only send ID, server will fetch credentials
       autorizacion: autorizacion,
     }
 
     console.log("📤 Submitting to server action:", {
       phone: formDataToSubmit.phone,
       requestedAmount: formDataToSubmit.requestedAmount,
-      usuario: formDataToSubmit.usuario,
-      rep_id: formDataToSubmit.rep_id,
-      hasPassword: !!formDataToSubmit.password,
-      passwordLength: formDataToSubmit.password?.length || 0,
+      comercioId: formDataToSubmit.comercioId,
       autorizacion: formDataToSubmit.autorizacion,
     })
 
@@ -191,13 +177,12 @@ export async function handleStep2Submit(
 
   try {
     // Prepare data for server action (PAQgo payment)
+    // Only send comercio ID, server will fetch credentials
     const formDataToSubmit = {
       phone: phone.replace(/\s/g, ""),
       token: token,
       autorizacion: store.formData.autorizacion,
-      usuario: store.comercio.user,
-      password: store.comercio.password,
-      rep_id: store.comercio.rep_id,
+      comercioId: store.comercio.id, // Only send ID, server will fetch credentials
       requestedAmount: store.formData.requestedAmount,
     }
 
@@ -271,12 +256,11 @@ export async function handleResendToken(
     // Generate authorization if not exists
     const autorizacion = store.formData.autorizacion || generateAutorizacion()
 
+    // Only send comercio ID, server will fetch credentials
     const formDataToSubmit = {
       phone: cleanPhone,
       requestedAmount: store.formData.requestedAmount,
-      usuario: store.comercio.user,
-      password: store.comercio.password,
-      rep_id: store.comercio.rep_id,
+      comercioId: store.comercio.id, // Only send ID, server will fetch credentials
       autorizacion: autorizacion,
     }
 
