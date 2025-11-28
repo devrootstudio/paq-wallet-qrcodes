@@ -37,10 +37,31 @@ export default async function QRPage({ params }: QRPageProps) {
   }
   
   // Generar la URL del POS (usar URL absoluta para que funcione al escanear)
-  const headersList = await headers()
-  const host = headersList.get('host') || 'localhost:3000'
-  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `${protocol}://${host}`
+  let baseUrl = process.env.NEXT_PUBLIC_BASE_URL
+  
+  if (!baseUrl) {
+    if (process.env.VERCEL_URL) {
+      baseUrl = `https://${process.env.VERCEL_URL}`
+    } else {
+      try {
+        const headersList = await headers()
+        const host = headersList.get('host')
+        if (host) {
+          const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
+          baseUrl = `${protocol}://${host}`
+        } else {
+          baseUrl = process.env.NODE_ENV === 'production' 
+            ? 'https://paq-wallet-qrcodes-mhzp.vercel.app'
+            : 'http://localhost:3000'
+        }
+      } catch (error) {
+        baseUrl = process.env.NODE_ENV === 'production' 
+          ? 'https://paq-wallet-qrcodes-mhzp.vercel.app'
+          : 'http://localhost:3000'
+      }
+    }
+  }
+  
   const posUrl = `${baseUrl}/pos/${id}`
   
   return <QRCodePageClient comercio={comercio} posUrl={posUrl} />
